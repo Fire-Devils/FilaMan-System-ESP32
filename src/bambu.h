@@ -4,6 +4,23 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
+// Supported Bambu Lab printer model identifiers
+enum BambuPrinterModel : uint8_t {
+    MODEL_UNKNOWN = 0,
+    MODEL_X1C,
+    MODEL_X1,
+    MODEL_X1E,
+    MODEL_P1P,
+    MODEL_P1S,
+    MODEL_P2S,
+    MODEL_A1,
+    MODEL_A1_MINI,
+    MODEL_H2D,
+    MODEL_H2D_PRO,
+    MODEL_H2C,
+    MODEL_H2S
+};
+
 struct TrayData {
     uint8_t id;
     String tray_info_idx;
@@ -22,6 +39,7 @@ struct BambuCredentials {
     String accesscode;
     bool autosend_enable;
     int autosend_time;
+    BambuPrinterModel printer_model;
 };
 
 #define MAX_AMS 17  // 16 normale AMS + 1 externe Spule
@@ -43,7 +61,11 @@ extern BambuCredentials bambuCredentials;
 
 bool removeBambuCredentials();
 bool loadBambuCredentials();
-bool saveBambuCredentials(const String& bambu_ip, const String& bambu_serialnr, const String& bambu_accesscode, const bool autoSend, const String& autoSendTime);
+bool saveBambuCredentials(const String& bambu_ip, const String& bambu_serialnr, const String& bambu_accesscode, const bool autoSend, const String& autoSendTime, const String& printerModel);
+const char* printerModelToString(BambuPrinterModel model);
+BambuPrinterModel stringToPrinterModel(const String& modelStr);
+bool isH2Series(BambuPrinterModel model);
+bool isA1Series(BambuPrinterModel model);
 bool setupMqtt();
 void mqtt_loop(void * parameter);
 bool setBambuSpool(String payload);

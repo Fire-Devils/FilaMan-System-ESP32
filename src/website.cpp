@@ -280,6 +280,7 @@ void setupWebserver(AsyncWebServer &server) {
         html.replace("{{bambuCode}}", bambuCredentials.accesscode ? bambuCredentials.accesscode : "");
         html.replace("{{autoSendToBambu}}", bambuCredentials.autosend_enable ? "checked" : "");
         html.replace("{{autoSendTime}}", (bambuCredentials.autosend_time != 0) ? String(bambuCredentials.autosend_time) : String(BAMBU_DEFAULT_AUTOSEND_TIME));
+        html.replace("{{printerModel}}", String(printerModelToString(bambuCredentials.printer_model)));
 
         request->send(200, "text/html", html);
     });
@@ -330,7 +331,7 @@ void setupWebserver(AsyncWebServer &server) {
             return;
         }
 
-        if (!request->hasParam("bambu_ip") || !request->hasParam("bambu_serialnr") || !request->hasParam("bambu_accesscode")) {
+        if (!request->hasParam("bambu_ip") || !request->hasParam("bambu_serialnr") || !request->hasParam("bambu_accesscode") || !request->hasParam("printerModel")) {
             request->send(400, "application/json", "{\"success\": false, \"error\": \"Missing parameter\"}");
             return;
         }
@@ -340,18 +341,20 @@ void setupWebserver(AsyncWebServer &server) {
         String bambu_accesscode = request->getParam("bambu_accesscode")->value();
         bool autoSend = (request->getParam("autoSend")->value() == "true") ? true : false;
         String autoSendTime = request->getParam("autoSendTime")->value();
+        String printerModel = request->getParam("printerModel")->value();
         
         bambu_ip.trim();
         bambu_serialnr.trim();
         bambu_accesscode.trim();
         autoSendTime.trim();
+        printerModel.trim();
 
         if (bambu_ip.length() == 0 || bambu_serialnr.length() == 0 || bambu_accesscode.length() == 0) {
             request->send(400, "application/json", "{\"success\": false, \"error\": \"Empty parameter\"}");
             return;
         }
 
-        bool success = saveBambuCredentials(bambu_ip, bambu_serialnr, bambu_accesscode, autoSend, autoSendTime);
+        bool success = saveBambuCredentials(bambu_ip, bambu_serialnr, bambu_accesscode, autoSend, autoSendTime, printerModel);
 
         request->send(200, "application/json", "{\"healthy\": " + String(success ? "true" : "false") + "}");
     });

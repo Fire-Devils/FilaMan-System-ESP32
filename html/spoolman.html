@@ -108,8 +108,9 @@
             const code = document.getElementById('bambuCode').value;
             const autoSend = document.getElementById('autoSend').checked;
             const autoSendTime = document.getElementById('autoSendTime').value;
+            const printerModel = document.getElementById('printerModel').value;
 
-            fetch(`/api/bambu?bambu_ip=${encodeURIComponent(ip)}&bambu_serialnr=${encodeURIComponent(serial)}&bambu_accesscode=${encodeURIComponent(code)}&autoSend=${autoSend}&autoSendTime=${autoSendTime}`)
+            fetch(`/api/bambu?bambu_ip=${encodeURIComponent(ip)}&bambu_serialnr=${encodeURIComponent(serial)}&bambu_accesscode=${encodeURIComponent(code)}&autoSend=${autoSend}&autoSendTime=${autoSendTime}&printerModel=${encodeURIComponent(printerModel)}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.healthy) {
@@ -139,6 +140,19 @@
     </script>
     <script>
         var spoolmanUrl = "{{spoolmanUrl}}";
+        var savedPrinterModel = "{{printerModel}}";
+        
+        /**
+         * Sets the printer model dropdown to the saved value after page load
+         */
+        document.addEventListener('DOMContentLoaded', function() {
+            if (savedPrinterModel && savedPrinterModel !== "Unknown") {
+                const select = document.getElementById('printerModel');
+                if (select) {
+                    select.value = savedPrinterModel;
+                }
+            }
+        });
     </script>
     
     <div class="content">
@@ -179,6 +193,24 @@
                     <div class="input-group">
                         <label for="bambuCode">Access Code:</label>
                         <input type="text" id="bambuCode" placeholder="Access Code of the printer" value="{{bambuCode}}">
+                    </div>
+                    <div class="input-group">
+                        <label for="printerModel">Printer Model:</label>
+                        <select id="printerModel" class="styled-select">
+                            <option value="Unknown">-- Select Model --</option>
+                            <option value="X1C">X1 Carbon (X1C)</option>
+                            <option value="X1">X1</option>
+                            <option value="X1E">X1E</option>
+                            <option value="P1P">P1P</option>
+                            <option value="P1S">P1S</option>
+                            <option value="P2S">P2S</option>
+                            <option value="A1">A1</option>
+                            <option value="A1 Mini">A1 Mini</option>
+                            <option value="H2D">H2D</option>
+                            <option value="H2D Pro">H2D Pro</option>
+                            <option value="H2C">H2C</option>
+                            <option value="H2S">H2S</option>
+                        </select>
                     </div>
                     <hr>
                     <p>If activated, FilaMan will automatically update the next filled tray with the last scanned and weighed spool.</p>

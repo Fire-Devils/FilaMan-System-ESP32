@@ -12,6 +12,68 @@
 #include "display.h"
 #include <Preferences.h>
 
+/**
+ * Converts BambuPrinterModel enum to human-readable string
+ * @param model The printer model enum value
+ * @return Display name string for the printer model
+ */
+const char* printerModelToString(BambuPrinterModel model) {
+    switch (model) {
+        case MODEL_X1C:      return "X1C";
+        case MODEL_X1:       return "X1";
+        case MODEL_X1E:      return "X1E";
+        case MODEL_P1P:      return "P1P";
+        case MODEL_P1S:      return "P1S";
+        case MODEL_P2S:      return "P2S";
+        case MODEL_A1:       return "A1";
+        case MODEL_A1_MINI:  return "A1 Mini";
+        case MODEL_H2D:      return "H2D";
+        case MODEL_H2D_PRO:  return "H2D Pro";
+        case MODEL_H2C:      return "H2C";
+        case MODEL_H2S:      return "H2S";
+        default:             return "Unknown";
+    }
+}
+
+/**
+ * Converts a string to the corresponding BambuPrinterModel enum
+ * @param modelStr The model string (e.g. "X1C", "A1 Mini")
+ * @return Matching BambuPrinterModel enum value
+ */
+BambuPrinterModel stringToPrinterModel(const String& modelStr) {
+    if (modelStr == "X1C")      return MODEL_X1C;
+    if (modelStr == "X1")       return MODEL_X1;
+    if (modelStr == "X1E")      return MODEL_X1E;
+    if (modelStr == "P1P")      return MODEL_P1P;
+    if (modelStr == "P1S")      return MODEL_P1S;
+    if (modelStr == "P2S")      return MODEL_P2S;
+    if (modelStr == "A1")       return MODEL_A1;
+    if (modelStr == "A1 Mini")  return MODEL_A1_MINI;
+    if (modelStr == "H2D")      return MODEL_H2D;
+    if (modelStr == "H2D Pro")  return MODEL_H2D_PRO;
+    if (modelStr == "H2C")      return MODEL_H2C;
+    if (modelStr == "H2S")      return MODEL_H2S;
+    return MODEL_UNKNOWN;
+}
+
+/**
+ * Checks if the given model belongs to the H2 series (dual nozzle / office printers)
+ * @param model The printer model to check
+ * @return true if H2D, H2D Pro, H2C, or H2S
+ */
+bool isH2Series(BambuPrinterModel model) {
+    return model == MODEL_H2D || model == MODEL_H2D_PRO || model == MODEL_H2C || model == MODEL_H2S;
+}
+
+/**
+ * Checks if the given model belongs to the A1 series
+ * @param model The printer model to check
+ * @return true if A1 or A1 Mini
+ */
+bool isA1Series(BambuPrinterModel model) {
+    return model == MODEL_A1 || model == MODEL_A1_MINI;
+}
+
 WiFiClient espClient;
 SSLClient sslClient(&espClient);
 PubSubClient client(sslClient);
@@ -43,6 +105,7 @@ bool removeBambuCredentials() {
     preferences.remove(NVS_KEY_BAMBU_ACCESSCODE);
     preferences.remove(NVS_KEY_BAMBU_AUTOSEND_ENABLE);
     preferences.remove(NVS_KEY_BAMBU_AUTOSEND_TIME);
+    preferences.remove(NVS_KEY_BAMBU_PRINTER_MODEL);
     preferences.end();
 
     // Löschen der globalen Variablen
@@ -51,6 +114,7 @@ bool removeBambuCredentials() {
     bambuCredentials.accesscode = "";
     bambuCredentials.autosend_enable = false;
     bambuCredentials.autosend_time = BAMBU_DEFAULT_AUTOSEND_TIME;
+    bambuCredentials.printer_model = MODEL_UNKNOWN;
 
     autoSetToBambuSpoolId = 0;
     ams_count = 0;
@@ -61,7 +125,7 @@ bool removeBambuCredentials() {
     return true;
 }
 
-bool saveBambuCredentials(const String& ip, const String& serialnr, const String& accesscode, bool autoSend, const String& autoSendTime) {
+bool saveBambuCredentials(const String& ip, const String& serialnr, const String& accesscode, bool autoSend, const String& autoSendTime, const String& printerModel) {
     if (BambuMqttTask) {
         vTaskDelete(BambuMqttTask);
         BambuMqttTask = NULL;
@@ -72,6 +136,7 @@ bool saveBambuCredentials(const String& ip, const String& serialnr, const String
     bambuCredentials.accesscode = accesscode.c_str();
     bambuCredentials.autosend_enable = autoSend;
     bambuCredentials.autosend_time = autoSendTime.toInt();
+    bambuCredentials.printer_model = stringToPrinterModel(printerModel);
 
     Preferences preferences;
     preferences.begin(NVS_NAMESPACE_BAMBU, false); // false = readwrite
@@ -80,6 +145,7 @@ bool saveBambuCredentials(const String& ip, const String& serialnr, const String
     preferences.putString(NVS_KEY_BAMBU_ACCESSCODE, bambuCredentials.accesscode);
     preferences.putBool(NVS_KEY_BAMBU_AUTOSEND_ENABLE, bambuCredentials.autosend_enable);
     preferences.putInt(NVS_KEY_BAMBU_AUTOSEND_TIME, bambuCredentials.autosend_time);
+    preferences.putUChar(NVS_KEY_BAMBU_PRINTER_MODEL, (uint8_t)bambuCredentials.printer_model);
     preferences.end();
 
     vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -96,6 +162,7 @@ bool loadBambuCredentials() {
     String code = preferences.getString(NVS_KEY_BAMBU_ACCESSCODE, "");
     bool autosendEnable = preferences.getBool(NVS_KEY_BAMBU_AUTOSEND_ENABLE, false);
     int autosendTime = preferences.getInt(NVS_KEY_BAMBU_AUTOSEND_TIME, BAMBU_DEFAULT_AUTOSEND_TIME);
+    uint8_t printerModelVal = preferences.getUChar(NVS_KEY_BAMBU_PRINTER_MODEL, (uint8_t)MODEL_UNKNOWN);
     preferences.end();
 
     if(ip != ""){
@@ -104,6 +171,7 @@ bool loadBambuCredentials() {
         bambuCredentials.accesscode = code.c_str();
         bambuCredentials.autosend_enable = autosendEnable;
         bambuCredentials.autosend_time = autosendTime;
+        bambuCredentials.printer_model = (BambuPrinterModel)printerModelVal;
 
         Serial.println("credentials loaded loadCredentials!");
         Serial.println(bambuCredentials.ip);
@@ -111,6 +179,7 @@ bool loadBambuCredentials() {
         Serial.println(bambuCredentials.accesscode);
         Serial.println(String(bambuCredentials.autosend_enable));
         Serial.println(String(bambuCredentials.autosend_time));
+        Serial.println("Printer model: " + String(printerModelToString(bambuCredentials.printer_model)));
 
         return true;
     }
@@ -230,7 +299,7 @@ bool sendMqttMessage(const String& payload) {
 }
 
 bool setBambuSpool(String payload) {
-    Serial.println("Spool settings in");
+    Serial.println("Spool settings in (model: " + String(printerModelToString(bambuCredentials.printer_model)) + ")");
     Serial.println(payload);
 
     // Parse the JSON
@@ -632,6 +701,7 @@ bool setupMqtt() {
     {
         oledShowProgressBar(4, 7, DISPLAY_BOOT_TEXT, "Bambu init");
         bambuDisabled = false;
+        Serial.println("Connecting to Bambu printer model: " + String(printerModelToString(bambuCredentials.printer_model)));
         sslClient.setCACert(root_ca);
         sslClient.setInsecure();
         client.setServer(bambuCredentials.ip.c_str(), 8883);

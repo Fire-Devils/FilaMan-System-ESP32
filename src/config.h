@@ -17,6 +17,7 @@
 #define NVS_KEY_BAMBU_SERIAL                "bambuSerial"
 #define NVS_KEY_BAMBU_AUTOSEND_ENABLE       "autosendEnable"
 #define NVS_KEY_BAMBU_AUTOSEND_TIME         "autosendTime"
+#define NVS_KEY_BAMBU_PRINTER_MODEL         "printerModel"
 
 #define NVS_NAMESPACE_SCALE                 "scale"
 #define NVS_KEY_CALIBRATION                 "cal_value"
