@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.0.10-beta1] - 2026-02-11
+### Added
+- add printer model selection and handling in Bambu integration
+
+
 ## [2.0.10] - 2025-10-15
 ### Fixed
 - fix typo
