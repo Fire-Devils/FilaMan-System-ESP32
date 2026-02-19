@@ -24,12 +24,28 @@ AsyncWebSocket ws("/ws");
 uint8_t lastSuccess = 0;
 nfcReaderStateType lastnfcReaderState = NFC_IDLE;
 
+void sendNfcDataToClient(AsyncWebSocketClient *client) {
+    if(!client) return;
+    switch(nfcReaderState){
+        case NFC_IDLE: client->text("{\"type\":\"nfcData\", \"payload\":{}}"); break;
+        case NFC_READ_SUCCESS: client->text("{\"type\":\"nfcData\", \"payload\":" + nfcJsonData + "}"); break;
+        case NFC_READ_ERROR: client->text("{\"type\":\"nfcData\", \"payload\":{\"error\":\"Read Error\"}}"); break;
+        case NFC_WRITING: client->text("{\"type\":\"nfcData\", \"payload\":{\"info\":\"Writing...\"}}"); break;
+        case NFC_WRITE_SUCCESS: client->text("{\"type\":\"nfcData\", \"payload\":{\"info\":\"Success\"}}"); break;
+        case NFC_WRITE_ERROR: client->text("{\"type\":\"nfcData\", \"payload\":{\"error\":\"Write Error\"}}"); break;
+        default: break;
+    }
+}
+
 void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
     if (type == WS_EVT_CONNECT) {
-        Serial.printf("WS Client #%u connected\n", client->id());
-        sendNfcData();
-        ws.text(client->id(), "{\"type\":\"nfcTag\", \"payload\":{\"found\": " + String(lastSuccess) + "}}");
-        server->cleanupClients();
+        Serial.printf("WS Client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+        sendNfcDataToClient(client);
+        client->text("{\"type\":\"nfcTag\", \"payload\":{\"found\": " + String(lastSuccess) + "}}");
+    } else if (type == WS_EVT_DISCONNECT) {
+        Serial.printf("WS Client #%u disconnected\n", client->id());
+    } else if (type == WS_EVT_ERROR) {
+        Serial.printf("WS Client #%u error: %u\n", client->id(), *((uint16_t*)arg));
     } else if (type == WS_EVT_DATA) {
         JsonDocument doc;
         DeserializationError error = deserializeJson(doc, (char*)data, len);

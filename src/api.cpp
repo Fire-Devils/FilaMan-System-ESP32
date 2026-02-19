@@ -216,8 +216,9 @@ void sendLocationAsync(int spoolId, String spoolTagUuid, int locationId, String 
 bool initFilaman() {
     loadFilamanConfig();
     queueMutex = xSemaphoreCreateMutex();
-    // Reduce stack size to 6k and set priority to 0 (lowest) to prevent starving WiFi stack
-    xTaskCreatePinnedToCore(filamanApiTask, "FilaManApi", 6144, NULL, 0, NULL, 0); 
+    // Move to Core 1 (Hardware Core) to free up Core 0 for WiFi/Webserver
+    // Set priority to 1 (same as Scale/NFC) to ensure fair scheduling
+    xTaskCreatePinnedToCore(filamanApiTask, "FilaManApi", 6144, NULL, 1, NULL, 1); 
     if (checkFilamanRegistration()) sendHeartbeatAsync();
     return true;
 }

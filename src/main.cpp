@@ -119,6 +119,8 @@ void loop() {
   if (intervalElapsed(currentMillis, lastTopRowUpdateTime, DISPLAY_UPDATE_INTERVAL)) 
   {
     oledShowTopRow();
+    // Clean up dead websocket clients periodically instead of on connect
+    if(currentMillis % 10000 < 50) ws.cleanupClients(); 
   }
 
   // Periodic FilaMan heartbeat
