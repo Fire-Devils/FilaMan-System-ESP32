@@ -1,4 +1,4 @@
-<!-- head --><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -30,22 +30,17 @@
         <nav style="display: flex; gap: 1rem;">
             <a href="/">Start</a>
             <a href="/waage">Scale</a>
-            <a href="/spoolman">Spoolman/Bambu</a>
+            <a href="/config">Config</a>
             <a href="/about">About</a>
             <a href="/upgrade">Upgrade</a>
         </nav>
         <div class="status-container">
             <div class="status-item">
-                <span class="status-dot" id="bambuDot"></span>B
-            </div>
-            <div class="status-item">
-                <span class="status-dot" id="spoolmanDot"></span>S
+                <span class="status-dot" id="filamanDot"></span>F
             </div>
             <div class="ram-status" id="ramStatus"></div>
         </div>
     </div>
-
-<!-- head -->
 
     <div class="content">
         <h1>FilaMan</h1>
@@ -55,25 +50,42 @@
         <h2>About FilaMan</h2>
         <p>
             FilaMan is a tool designed to simplify filament spool management. It allows you to identify and weigh filament spools, 
-            automatically sync data with the self-hosted <a href="https://github.com/Donkie/Spoolman" target="_blank">Spoolman</a> platform.
+            automatically syncing data with the FilaMan-System.
         </p>
 
-        <p>Get more information at <a href="https://www.filaman.app" target="_blank">https://www.filaman.app</a> and <a href="https://github.com/ManuelW77/Filaman" target="_blank">https://github.com/ManuelW77/Filaman</a>.</p>
+        <p>Get more information at <a href="https://www.filaman.app" target="_blank">https://www.filaman.app</a>.</p>
 
         <div class="features">
             <div class="feature">
                 <h3>Spool Identification</h3>
-                <p>Easily identify filament spools using NFC tags (NTag215 or larger).</p>
+                <p>Easily identify filament spools using NFC tags.</p>
             </div>
             <div class="feature">
                 <h3>Automatic Syncing</h3>
-                <p>Seamlessly update spool data with Spoolman for accurate tracking.</p>
+                <p>Seamlessly update spool data with the FilaMan API for accurate tracking.</p>
             </div>
             <div class="feature">
-                <h3>OpenSpool Compatibility</h3>
-                <p>Works with OpenSpool to recognize and activate spools on Bambu printers.</p>
+                <h3>Scale Integration</h3>
+                <p>Built-in scale support for precise remaining weight calculation.</p>
             </div>
         </div>
     </div>
+
+    <script>
+        let ws = null;
+        function connectWebSocket() {
+            ws = new WebSocket(`ws://${window.location.hostname}/ws`);
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'heartbeat') {
+                    document.getElementById('filamanDot').style.backgroundColor = data.filaman_connected ? '#4caf50' : '#f44336';
+                    document.getElementById('ramStatus').textContent = data.freeHeap + ' KB free';
+                }
+            };
+            ws.onclose = () => setTimeout(connectWebSocket, 2000);
+        }
+        connectWebSocket();
+        setInterval(() => { if(ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type:'heartbeat'})); }, 5000);
+    </script>
 </body>
 </html>

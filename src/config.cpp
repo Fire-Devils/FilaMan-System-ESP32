@@ -37,7 +37,9 @@ const uint8_t webserverPort = 80;
 // ***** Webserver
 
 // ***** API
-const char* apiUrl = "/api/v1";
+String filamanUrl = "";
+String filamanToken = "";
+bool filamanRegistered = false;
 // ***** API
 
 // ***** Bambu Auto Set Spool

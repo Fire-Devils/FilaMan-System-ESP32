@@ -39,8 +39,8 @@ void setup() {
   // Webserver
   setupWebserver(server);
 
-  // Spoolman API
-  initSpoolman();
+  // FilaMan API
+  initFilaman();
 
   // NFC Reader
   startNfc();
@@ -85,17 +85,7 @@ bool intervalElapsed(unsigned long currentTime, unsigned long &lastTime, unsigne
 unsigned long lastWeightReadTime = 0;
 const unsigned long weightReadInterval = 1000; // 1 second
 
-unsigned long lastAutoSetBambuAmsTime = 0;
-const unsigned long autoSetBambuAmsInterval = 1000; // 1 second
-uint8_t autoAmsCounter = 0;
-
-uint8_t weightSend = 0;
-int16_t lastWeight = 0;
-
-// WIFI check variables
-unsigned long lastWifiCheckTime = 0;
-unsigned long lastTopRowUpdateTime = 0;
-unsigned long lastSpoolmanHealcheckTime = 0;
+unsigned long lastFilamanHeartbeatTime = 0;
 
 // Button debounce variables
 unsigned long lastButtonPress = 0;
@@ -124,10 +114,10 @@ void loop() {
     oledShowTopRow();
   }
 
-  // Periodic spoolman health check
-  if (intervalElapsed(currentMillis, lastSpoolmanHealcheckTime, SPOOLMAN_HEALTHCHECK_INTERVAL)) 
+  // Periodic FilaMan heartbeat
+  if (intervalElapsed(currentMillis, lastFilamanHeartbeatTime, FILAMAN_HEARTBEAT_INTERVAL)) 
   {
-    checkSpoolmanInstance();
+    sendHeartbeat();
   }
 
   // If scale is not calibrated, only show a warning
@@ -147,7 +137,7 @@ void loop() {
     {
       // Use filtered weight for smooth display, but still check API weight for significant changes
       int16_t displayWeight = getFilteredDisplayWeight();
-      if (mainTaskWasPaused || (weight != lastWeight && nfcReaderState == NFC_IDLE && (!bambuCredentials.autosend_enable || autoSetToBambuSpoolId == 0)))
+      if (mainTaskWasPaused || (weight != lastWeight && nfcReaderState == NFC_IDLE))
       {
         (displayWeight < 2) ? ((displayWeight < -2) ? oledShowMessage("!! -0") : oledShowWeight(0)) : oledShowWeight(displayWeight);
       }
@@ -184,29 +174,29 @@ void loop() {
     
     lastWeight = weight;
 
-    // Wenn ein Tag mit SM id erkannte wurde und der Waage Counter anspricht an SM Senden
-    if (activeSpoolId != "" && weightCounterToApi > 3 && weightSend == 0 && nfcReaderState == NFC_READ_SUCCESS && tagProcessed == false && spoolmanApiState == API_IDLE) 
+    // Wenn ein Tag erkannt wurde und das Gewicht stabil ist, an FilaMan senden
+    if (weightCounterToApi > 3 && weightSend == 0 && nfcReaderState == NFC_READ_SUCCESS && tagProcessed == false) 
     {
       // set the current tag as processed to prevent it beeing processed again
       tagProcessed = true;
+      
+      // Get UID from nfcJsonData or similar (nfc.cpp should set it)
+      // For now, use activeSpoolId if available
+      int sId = activeSpoolId.toInt();
+      if (sendWeight(sId, activeTagUuid, weight)) {
+          weightSend = 1;
+          Serial.println("Weight sent to FilaMan");
+      }
     }
 
-    // Handle successful tag write: Send weight to Spoolman but NEVER auto-send to Bambu
-    if (activeSpoolId != "" && weightCounterToApi > 3 && weightSend == 0 && nfcReaderState == NFC_WRITE_SUCCESS && tagProcessed == false && spoolmanApiState == API_IDLE) 
+    // Handle successful tag write
+    if (nfcReaderState == NFC_WRITE_SUCCESS && tagProcessed == false) 
     {
-      // set the current tag as processed to prevent it beeing processed again
       tagProcessed = true;
-
-      if (updateSpoolWeight(activeSpoolId, weight)) 
-      {
-        weightSend = 1;
-        Serial.println("Tag written: Weight sent to Spoolman, but NO auto-send to Bambu");
-        // INTENTIONALLY do NOT set autoSetToBambuSpoolId here to prevent Bambu auto-send
-      }
-      else
-      {
-        oledShowIcon("failed");
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
+      int sId = activeSpoolId.toInt();
+      if (sendWeight(sId, activeTagUuid, weight)) {
+          weightSend = 1;
+          Serial.println("Weight sent to FilaMan after tag write");
       }
     }
   }

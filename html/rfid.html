@@ -1,9 +1,9 @@
-<!-- head --><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FilaMan - Filament Management Tool</title>
+    <title>FilaMan - Status</title>
     <link rel="icon" type="image/png" href="/favicon.ico">
     <link rel="stylesheet" href="style.css">
     <script>
@@ -30,134 +30,39 @@
         <nav style="display: flex; gap: 1rem;">
             <a href="/">Start</a>
             <a href="/waage">Scale</a>
-            <a href="/spoolman">Spoolman/Bambu</a>
+            <a href="/config">Config</a>
             <a href="/about">About</a>
             <a href="/upgrade">Upgrade</a>
         </nav>
         <div class="status-container">
             <div class="status-item">
-                <span class="status-dot" id="bambuDot"></span>B
-            </div>
-            <div class="status-item">
-                <span class="status-dot" id="spoolmanDot"></span>S
+                <span class="status-dot" id="filamanDot"></span>F
             </div>
             <div class="ram-status" id="ramStatus"></div>
         </div>
     </div>
 
-<!-- head -->
-
-<div class="connection-status hidden">
-    <div class="spinner"></div>
-    <span>Connection lost. Trying to reconnect...</span>
-</div>
-<div class="content">
-    <div class="three-column-layout">
-        <!-- Linke Spalte -->
-        <div class="column">
-            <div class="feature-box">
-                <div class="statistics-header">
-                    <h2>Statistics</h2>
-                    <button id="refreshSpoolman" class="refresh-button">
-                        <span>Refresh Spoolman</span>
-                    </button>
-                </div>
-                <div class="statistics-column">
-                    <h3>Spools</h3>
-                        <div class="spool-stat" style="display: flex; justify-content: center; align-items: center;">
-                            <span class="stat-label">total:</span>
-                            <span class="stat-value" id="totalSpools"></span>
-                            <div style="width: auto;"></div>
-                            <span class="stat-label">without Tag:</span>
-                            <span class="stat-value" id="spoolsWithoutTag"></span>
-                        </div>
-                </div>
-
-                <div class="statistics-grid">
-                    <div class="statistics-column">
-                        <h3>Overview</h3>
-                        <ul class="statistics-list">
-                            <li>
-                                <span class="stat-label">Manufacturer:</span>
-                                <span class="stat-value" id="totalVendors"></span>
-                            </li>
-                            <li>
-                                <span class="stat-label">Weight:</span>
-                                <span class="stat-value"><span id="totalWeight"></span></span>
-                            </li>
-                            <li>
-                                <span class="stat-label">Length:</span>
-                                <span class="stat-value"><span id="totalLength"></span></span>
-                            </li>
-                        </ul>
-                    </div>
-                    <div class="statistics-column">
-                        <h3>Materials</h3>
-                        <ul class="statistics-list" id="materialsList">
-                            <!-- Wird dynamisch befüllt -->
-                        </ul>
-                    </div>
+    <div class="content">
+        <h1>Device Status</h1>
+        
+        <div class="three-column-layout">
+            <div class="column">
+                <div class="feature-box">
+                    <h2>Weight</h2>
+                    <div id="weightDisplay" style="font-size: 3rem; text-align: center; margin: 20px 0;">0g</div>
                 </div>
             </div>
-            <div class="feature-box">
-                <div class="nfc-header">
-                    <h2>NFC-Tag</h2>
-                    <span id="nfcStatusIndicator" class="status-circle"></span>
+            <div class="column">
+                <div class="feature-box">
+                    <h2>NFC Tag</h2>
+                    <div id="nfcDisplay" style="text-align: center; margin: 20px 0;">
+                        <p id="nfcInfo">No tag detected</p>
+                    </div>
                 </div>
-                <div class="nfc-status-display"></div>
             </div>
         </div>
-
-        <!-- Mittlere Spalte -->
-        <div class="column">
-            <div class="feature-box">
-                <h2>Spoolman Spools</h2>
-                <label for="vendorSelect">Manufacturer:</label>
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <select id="vendorSelect" class="styled-select">
-                        <option value="">Please choose...</option>
-                    </select>
-                    <label style="margin-left: 10px;">
-                        <input type="checkbox" id="onlyWithoutSmId" checked onchange="updateFilamentDropdown()">
-                        Only Spools without SM ID
-                    </label>
-                </div>
-            </div>
-
-            <div id="filamentSection" class="feature-box hidden">
-                <label>Spool / Filament:</label>
-                <div class="custom-dropdown">
-                    <div class="dropdown-button" onclick="toggleFilamentDropdown()">
-                        <div class="selected-color" id="selected-color"></div>
-                        <span id="selected-filament">Please choose...</span>
-                        <span class="dropdown-arrow">▼</span>
-                    </div>
-                    <div class="dropdown-content" id="filament-dropdown-content">
-                        <!-- Optionen werden dynamisch hinzugefügt -->
-                    </div>
-                </div>
-                <p id="nfcInfo" class="nfc-status"></p>
-                <button id="writeNfcButton" class="btn btn-primary hidden" onclick="writeNfcTag()">Write Tag</button>
-            </div>
-
-            <div class="feature-box">
-                <h2>Spoolman Locations</h2>
-                <label for="locationSelect">Location:</label>
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <select id="locationSelect" class="styled-select">
-                        <option value="">Please choose...</option>
-                    </select>
-                </div>
-                <p id="nfcInfoLocation" class="nfc-status"></p>
-                <button id="writeLocationNfcButton" class="btn btn-primary hidden" onclick="writeLocationNfcTag()">Write Location Tag</button>
-            </div>
-        </div>
-
     </div>
-</div>
 
-<script src="spoolman.js"></script>
-<script src="rfid.js"></script>
-
+    <script src="rfid.js"></script>
 </body>
 </html>

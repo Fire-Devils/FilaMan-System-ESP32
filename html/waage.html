@@ -1,9 +1,9 @@
-<!-- head --><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FilaMan - Filament Management Tool</title>
+    <title>FilaMan - Scale Configuration</title>
     <link rel="icon" type="image/png" href="/favicon.ico">
     <link rel="stylesheet" href="style.css">
     <script>
@@ -30,29 +30,18 @@
         <nav style="display: flex; gap: 1rem;">
             <a href="/">Start</a>
             <a href="/waage">Scale</a>
-            <a href="/spoolman">Spoolman/Bambu</a>
+            <a href="/config">Config</a>
             <a href="/about">About</a>
             <a href="/upgrade">Upgrade</a>
         </nav>
-        <div class="status-container">
-            <div class="status-item">
-                <span class="status-dot" id="bambuDot"></span>B
-            </div>
-            <div class="status-item">
-                <span class="status-dot" id="spoolmanDot"></span>S
-            </div>
-            <div class="ram-status" id="ramStatus"></div>
-        </div>
     </div>
 
-<!-- head -->
-
     <div class="content">
-        <h1>Scale Configuration Page</h1>
+        <h1>Scale Configuration</h1>
         
         <div class="card">
             <div class="card-body">
-                <h5 class="card-title">Sacle Calibration</h5>
+                <h5 class="card-title">Scale Actions</h5>
                 <button id="calibrateBtn" class="btn btn-primary">Calibrate Scale</button>
                 <button id="tareBtn" class="btn btn-secondary">Tare Scale</button>
                 &nbsp;&nbsp;&nbsp;Enable Auto-TARE <input type="checkbox" id="autoTareCheckbox" onchange="setAutoTare(this.checked);" {{autoTare}}>
@@ -60,18 +49,14 @@
             </div>
         </div>
 
-        <!-- Neue Kalibrierungskarte -->
         <div id="calibrationCard" class="card mt-3" style="display: none;">
             <div class="card-body">
-                <h5 class="card-title">Calibration done</h5>
+                <h5 class="card-title">Calibration Procedure</h5>
                 <p>Please follow these steps:</p>
                 <ol>
                     <li>Make sure the scale is empty</li>
                     <li>Have a 500g calibration weight ready</li>
                     <li>Click on "Start Calibration"</li>
-                    <li>Follow the further instructions</li>
-                </ol>
-                <ol>
                     <li>Step 1: Empty the scale</li>
                     <li>Step 2: Place the 500g weight on the scale</li>
                     <li>Step 3: Remove weight from Scale</li>
@@ -89,13 +74,11 @@
             ws = new WebSocket(`ws://${window.location.hostname}/ws`);
             
             ws.onopen = () => {
-                console.log('WebSocket verbunden');
                 statusMessage.innerHTML = 'Scale connected';
                 enableButtons(true);
             };
 
             ws.onclose = () => {
-                console.log('WebSocket getrennt');
                 statusMessage.innerHTML = 'Scale connection lost';
                 enableButtons(false);
                 setTimeout(connectWebSocket, 2000);
@@ -105,10 +88,10 @@
                 const data = JSON.parse(event.data);
                 if (data.type === 'scale') {
                     if (data.payload === 'success') {
-                        statusMessage.innerHTML = 'Well done';
+                        statusMessage.innerHTML = 'Action successful';
                         statusMessage.className = 'alert alert-success';
                     } else if (data.payload === 'error') {
-                        statusMessage.innerHTML = 'Error while action';
+                        statusMessage.innerHTML = 'Error while performing action';
                         statusMessage.className = 'alert alert-danger';
                     }
                 }
@@ -121,7 +104,6 @@
         }
 
         document.getElementById('calibrateBtn').addEventListener('click', () => {
-            // Kalibrierungskarte anzeigen
             document.getElementById('calibrationCard').style.display = 'block';
         });
 
@@ -130,7 +112,6 @@
                 type: 'scale',
                 payload: 'calibrate'
             }));
-            // Optional: Kalibrierungskarte nach dem Start ausblenden
             document.getElementById('calibrationCard').style.display = 'none';
         });
 
@@ -141,7 +122,6 @@
             }));
         });
 
-        // Add auto-tare function
         function setAutoTare(enabled) {
             ws.send(JSON.stringify({
                 type: 'scale',
@@ -150,7 +130,6 @@
             }));
         }
 
-        // WebSocket-Verbindung beim Laden der Seite initiieren
         connectWebSocket();
     </script>
 </body>

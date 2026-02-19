@@ -16,10 +16,10 @@ TaskHandle_t RfidReaderTask;
 
 JsonDocument rfidData;
 String activeSpoolId = "";
+String activeTagUuid = "";
 String lastSpoolId = "";
 String nfcJsonData = "";
 bool tagProcessed = false;
-volatile bool pauseBambuMqttTask = false;
 volatile bool nfcReadingTaskSuspendRequest = false;
 volatile bool nfcReadingTaskSuspendState = false;
 volatile bool nfcWriteInProgress = false; // Prevent any tag operations during write
@@ -1241,55 +1241,33 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
   {
     nfcJsonData = "";
     Serial.println("Fehler beim Verarbeiten des JSON-Dokuments");
-    Serial.print("deserializeJson() failed: ");
-    Serial.println(error.f_str());
     return false;
   } 
   else 
   {
-    // If spoolman is unavailable, there is no point in continuing
-    if(spoolmanConnected){
-      // Sende die aktualisierten AMS-Daten an alle WebSocket-Clients
+    if(filamanConnected){
       Serial.println("JSON-Dokument erfolgreich verarbeitet");
-      Serial.println(doc.as<String>());
       if (doc["sm_id"].is<String>() && doc["sm_id"] != "" && doc["sm_id"] != "0")
       {
-        oledShowProgressBar(2, octoEnabled?5:4, "Spool Tag", "Weighing");
-        Serial.println("SPOOL-ID gefunden: " + doc["sm_id"].as<String>());
+        oledShowProgressBar(2, 4, "Spool Tag", "Weighing");
         activeSpoolId = doc["sm_id"].as<String>();
         lastSpoolId = activeSpoolId;
       }
-      else if(doc["location"].is<String>() && doc["location"] != "")
+      else if(doc["location_id"].is<int>())
       {
         Serial.println("Location Tag found!");
-        String location = doc["location"].as<String>();
-        if(lastSpoolId != ""){
-          updateSpoolLocation(lastSpoolId, location);
-        }
-        else
-        {
-          Serial.println("Location update tag scanned without scanning spool before!");
-          oledShowProgressBar(1, 1, "Failure", "Scan spool first");
-        }
-      }
-      // Brand Filament not registered to Spoolman
-      else if ((!doc["sm_id"].is<String>() || (doc["sm_id"].is<String>() && (doc["sm_id"] == "0" || doc["sm_id"] == "")))
-              && doc["b"].is<String>() && doc["an"].is<String>())
-      {
-        doc["sm_id"] = "0"; // Ensure sm_id is set to 0
-        // If no sm_id is present but the brand is Brand Filament then
-        // create a new spool, maybe brand too, in Spoolman
-        Serial.println("New Brand Filament Tag found!");
-        createBrandFilament(doc, uidString);
+        int locId = doc["location_id"].as<int>();
+        int sId = lastSpoolId.toInt();
+        sendLocation(sId, "", locId, "");
       }
       else 
       {
-        Serial.println("Keine SPOOL-ID gefunden.");
+        Serial.println("Unbekannter Tag-Inhalt.");
         activeSpoolId = "";
-        oledShowProgressBar(1, 1, "Failure", "Unkown tag");
+        oledShowProgressBar(1, 1, "Failure", "Unknown tag");
       }
-    }else{
-      oledShowProgressBar(octoEnabled?5:4, octoEnabled?5:4, "Failure!", "Spoolman unavailable");
+    } else {
+      oledShowProgressBar(4, 4, "Failure!", "API offline");
     }
   }
 
@@ -1498,7 +1476,7 @@ bool quickSpoolIdCheck(String uidString) {
                         Serial.println("⚠ FAST-PATH: Could not read complete JSON, web interface may show limited data");
                     }
                     
-                    oledShowProgressBar(2, octoEnabled?5:4, "Known Spool", "Quick mode");
+                    oledShowProgressBar(2, 4, "Known Spool", "Quick mode");
                     Serial.println("✓ FAST-PATH SUCCESS: Known spool processed quickly");
                     return true;
                 } else {
@@ -1553,7 +1531,7 @@ bool quickSpoolIdCheck(String uidString) {
                     Serial.println("⚠ FAST-PATH: Could not read complete JSON, web interface may show limited data");
                 }
                 
-                oledShowProgressBar(2, octoEnabled?5:4, "Known Spool", "Quick mode");
+                oledShowProgressBar(2, 4, "Known Spool", "Quick mode");
                 Serial.println("✓ FAST-PATH SUCCESS: Known spool processed quickly");
                 return true;
             } else {
@@ -1777,7 +1755,6 @@ void writeJsonToTag(void *parameter) {
 
   // Only reset the write protection flag - reading task was never suspended
   nfcWriteInProgress = false; // Re-enable high-level tag operations
-  pauseBambuMqttTask = false;
 
   free(params->payload);
   delete params;
@@ -1911,9 +1888,10 @@ void scanRfidTask(void * parameter) {
 
       foundNfcTag(nullptr, success);
       
-      // Reset activeSpoolId immediately when no tag is detected to prevent stale autoSet
+      // Reset activeSpoolId and activeTagUuid immediately when no tag is detected
       if (!success) {
         activeSpoolId = "";
+        activeTagUuid = "";
       }
       
       // As long as there is still a tag on the reader, do not try to read it again
@@ -1927,7 +1905,7 @@ void scanRfidTask(void * parameter) {
 
         nfcReaderState = NFC_READING;
 
-        oledShowProgressBar(0, octoEnabled?5:4, "Reading", "Detecting tag");
+        oledShowProgressBar(0, 4, "Reading", "Detecting tag");
 
         // Reduced stabilization time for better responsiveness
         Serial.println("Tag detected, minimal stabilization...");
@@ -1945,6 +1923,7 @@ void scanRfidTask(void * parameter) {
         
         if (uidLength == 7)
         {
+          activeTagUuid = uidString;
           // Try fast-path detection first for known spools
           if (quickSpoolIdCheck(uidString)) {
               Serial.println("✓ FAST-PATH: Tag processed quickly, skipping full read");
@@ -2077,6 +2056,7 @@ void scanRfidTask(void * parameter) {
 void startNfc() {
   oledShowProgressBar(5, 7, DISPLAY_BOOT_TEXT, "NFC init");
   nfc.begin();                                           // Beginne Kommunikation mit RFID Leser
+
   delay(1000);
   unsigned long versiondata = nfc.getFirmwareVersion();  // Lese Versionsnummer der Firmware aus
   if (! versiondata) {                                   // Wenn keine Antwort kommt

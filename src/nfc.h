@@ -22,6 +22,7 @@ bool readCompleteJsonForFastPath(); // Read complete JSON data for fast-path web
 extern TaskHandle_t RfidReaderTask;
 extern String nfcJsonData;
 extern String activeSpoolId;
+extern String activeTagUuid;
 extern String lastSpoolId;
 extern volatile nfcReaderStateType nfcReaderState;
 extern volatile bool nfcWriteInProgress;

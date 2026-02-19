@@ -288,7 +288,6 @@ uint8_t calibrate_scale() {
   if (RfidReaderTask != NULL) vTaskSuspend(RfidReaderTask);
   if (ScaleTask != NULL) vTaskSuspend(ScaleTask);
 
-  pauseBambuMqttTask = true;
   pauseMainTask = 1;
   
   if (scale.wait_ready_timeout(1000))
@@ -395,7 +394,6 @@ uint8_t calibrate_scale() {
 
   if (RfidReaderTask != NULL) vTaskResume(RfidReaderTask);
   if (ScaleTask != NULL) vTaskResume(ScaleTask);
-  pauseBambuMqttTask = false;
   pauseMainTask = 0;
   scaleCalibrationActive = false;
 

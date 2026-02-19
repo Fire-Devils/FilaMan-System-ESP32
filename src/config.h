@@ -3,18 +3,15 @@
 
 #include <Arduino.h>
 
-#define BAMBU_DEFAULT_AUTOSEND_TIME         60
-
 #define NVS_NAMESPACE_API                   "api"
 #define NVS_KEY_FILAMAN_URL                "filamanUrl"
 #define NVS_KEY_FILAMAN_TOKEN              "filamanToken"
+#define NVS_KEY_FILAMAN_REGISTERED         "registered"
 
 #define NVS_NAMESPACE_SCALE                 "scale"
 #define NVS_KEY_CALIBRATION                 "cal_value"
 #define NVS_KEY_AUTOTARE                    "auto_tare"
 #define SCALE_DEFAULT_CALIBRATION_VALUE     430.0f;
-
-#define BAMBU_USERNAME                      "bblp"
 
 #define OLED_RESET                          -1      // Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_ADDRESS                      0x3CU   // See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
@@ -26,7 +23,7 @@
 
 #define WIFI_CHECK_INTERVAL                 60000U
 #define DISPLAY_UPDATE_INTERVAL             1000U
-#define SPOOLMAN_HEALTHCHECK_INTERVAL       60000U
+#define FILAMAN_HEARTBEAT_INTERVAL          60000U
 
 extern const uint8_t PN532_IRQ;
 extern const uint8_t PN532_RESET;
@@ -43,7 +40,10 @@ extern const uint8_t OLED_TOP_END;
 extern const uint8_t OLED_DATA_START;
 extern const uint8_t OLED_DATA_END;
 
-extern const char* apiUrl;
+extern String filamanUrl;
+extern String filamanToken;
+extern bool filamanRegistered;
+
 extern const uint8_t webserverPort;
 
 
