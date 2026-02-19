@@ -33,7 +33,7 @@ void startMDNS() {
   if (!MDNS.begin("filaman")) {
     Serial.println("Error setting up MDNS responder!");
     while(1) {
-      vTaskDelay(1000 / portTICK_PERIOD_MS);
+      vTaskDelay(pdMS_TO_TICKS(1000));
     }
   }
   MDNS.addService("http", "tcp", 80);
@@ -43,7 +43,7 @@ void startMDNS() {
 void configModeCallback (WiFiManager *myWiFiManager) {
   Serial.println("Entered config mode");
   oledShowTopRow();
-  oledShowMessage("WiFi Config Mode");
+  oledDisplayText("WiFi Config Mode");
 }
 
 void initWiFi() {
@@ -69,7 +69,7 @@ void initWiFi() {
     Serial.println("Failed to connect or hit timeout");
     // ESP.restart();
     oledShowTopRow();
-    oledShowMessage("WiFi not connected Check Portal");
+    oledDisplayText("WiFi not connected Check Portal");
   } 
   else {
     wifiOn = true;
@@ -92,15 +92,15 @@ void checkWiFiConnection() {
     Serial.println("WiFi connection lost. Reconnecting...");
     wifiOn = false;
     oledShowTopRow();
-    oledShowMessage("WiFi reconnecting");
+    oledDisplayText("WiFi reconnecting");
     WiFi.reconnect(); // Versuche, die Verbindung wiederherzustellen
-    vTaskDelay(5000 / portTICK_PERIOD_MS); // Warte 5 Sekunden, bevor erneut geprüft wird
+    vTaskDelay(pdMS_TO_TICKS(5000)); // Warte 5 Sekunden, bevor erneut geprüft wird
     if (WiFi.status() != WL_CONNECTED) 
     {
       Serial.println("Failed to reconnect. Restarting WiFi...");
       WiFi.disconnect();
       Serial.println("WiFi disconnected.");
-      vTaskDelay(1000 / portTICK_PERIOD_MS);
+      vTaskDelay(pdMS_TO_TICKS(1000));
       wifiErrorCounter++;
 
       //wifiSettings();

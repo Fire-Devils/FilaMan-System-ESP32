@@ -1,4 +1,4 @@
-<!-- head --><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -30,8 +30,7 @@
         <nav style="display: flex; gap: 1rem;">
             <a href="/">Start</a>
             <a href="/waage">Scale</a>
-            <a href="/config">Config</a>
-            <a href="/about">About</a>
+            <a href="/setup">Setup</a>
             <a href="/upgrade">Upgrade</a>
         </nav>
         <div class="status-container">
@@ -42,8 +41,6 @@
         </div>
     </div>
 
-<!-- head -->
-    
     <div class="content">
         <h1>Firmware Upgrade</h1>
 
@@ -58,7 +55,7 @@
                 <div class="update-form">
                     <form id="firmwareForm" enctype='multipart/form-data' data-type="firmware">
                         <input type='file' name='update' accept='.bin' required>
-                        <input type='submit' value='Start Firmware Update'>
+                        <input type='submit' value='Start Firmware Update' class="btn btn-primary">
                     </form>
                 </div>
             </div>
@@ -69,7 +66,7 @@
                 <div class="update-form">
                     <form id="webpageForm" enctype='multipart/form-data' data-type="webpage">
                         <input type='file' name='update' accept='.bin' required>
-                        <input type='submit' value='Start Webpage Update'>
+                        <input type='submit' value='Start Webpage Update' class="btn btn-primary">
                     </form>
                 </div>
             </div>
@@ -82,12 +79,6 @@
     </div>
 
     <script>
-        // Hide status indicators during update
-        const statusContainer = document.querySelector('.status-container');
-        if (statusContainer) {
-            statusContainer.style.display = 'none';
-        }
-
         const progress = document.querySelector('.progress-bar');
         const progressContainer = document.querySelector('.progress-container');
         const status = document.querySelector('.status');
@@ -96,93 +87,31 @@
 
         // WebSocket Handling
         let ws = null;
-        let wsReconnectTimer = null;
-
         function connectWebSocket() {
             ws = new WebSocket('ws://' + window.location.host + '/ws');
-            
             ws.onmessage = function(event) {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.type === "updateProgress" && updateInProgress) {
-                        // Zeige Fortschrittsbalken
-                        progressContainer.style.display = 'block';
-                        
-                        // Aktualisiere den Fortschritt nur wenn er größer ist
-                        const newProgress = parseInt(data.progress);
-                        if (!isNaN(newProgress) && newProgress >= lastReceivedProgress) {
-                            progress.style.width = newProgress + '%';
-                            progress.textContent = newProgress + '%';
-                            lastReceivedProgress = newProgress;
-                        }
-                        
-                        // Zeige Status-Nachricht
-                        if (data.message || data.status) {
-                            status.textContent = data.message || getStatusMessage(data.status);
-                            status.className = 'status success';
-                            status.style.display = 'block';
-                            
-                            // Starte Reload wenn Update erfolgreich
-                            if (data.status === 'success' || lastReceivedProgress >= 98) {
-                                clearTimeout(wsReconnectTimer);
-                                setTimeout(() => {
-                                    window.location.reload(true);
-                                    window.location.href = '/';
-                                }, 30000);
-                            }
-                        }
-                    }
-                } catch (e) {
-                    console.error('WebSocket message error:', e);
+                const data = JSON.parse(event.data);
+                if (data.type === "heartbeat") {
+                    document.getElementById('filamanDot').style.backgroundColor = data.filaman_connected ? '#4caf50' : '#f44336';
+                    document.getElementById('ramStatus').textContent = data.freeHeap + ' KB free';
                 }
-            };
-
-            ws.onclose = function() {
-                if (updateInProgress) {
-                    // Wenn der Fortschritt hoch genug ist, gehen wir von einem erfolgreichen Update aus
-                    if (lastReceivedProgress >= 85) {
-                        status.textContent = "Update appears successful! Device is restarting... Page will reload in 30 seconds.";
-                        status.className = 'status success';
+                if (data.type === "updateProgress" && updateInProgress) {
+                    progressContainer.style.display = 'block';
+                    const newProgress = parseInt(data.progress);
+                    if (!isNaN(newProgress) && newProgress >= lastReceivedProgress) {
+                        progress.style.width = newProgress + '%';
+                        progress.textContent = newProgress + '%';
+                        lastReceivedProgress = newProgress;
+                    }
+                    if (data.message) {
+                        status.textContent = data.message;
                         status.style.display = 'block';
-                        clearTimeout(wsReconnectTimer);
-                        setTimeout(() => {
-                            window.location.reload(true);
-                            window.location.href = '/';
-                        }, 30000);
-                    } else {
-                        // Versuche Reconnect bei niedrigem Fortschritt
-                        wsReconnectTimer = setTimeout(connectWebSocket, 1000);
                     }
                 }
             };
-
-            ws.onerror = function(err) {
-                console.error('WebSocket error:', err);
-                if (updateInProgress && lastReceivedProgress >= 85) {
-                    status.textContent = "Update appears successful! Device is restarting... Page will reload in 30 seconds.";
-                    status.className = 'status success';
-                    status.style.display = 'block';
-                    setTimeout(() => {
-                        window.location.href = '/';
-                    }, 30000);
-                }
-            };
+            ws.onclose = () => setTimeout(connectWebSocket, 2000);
         }
-
-        // Initial WebSocket connection
         connectWebSocket();
-
-        function getStatusMessage(status) {
-            switch(status) {
-                case 'starting': return 'Starting update...';
-                case 'uploading': return 'Uploading...';
-                case 'finalizing': return 'Finalizing update...';
-                case 'restoring': return 'Restoring configurations...';
-                case 'preparing': return 'Preparing for restart...';
-                case 'success': return 'Update successful! Device is restarting... Page will reload in 30 seconds.';
-                default: return 'Updating...';
-            }
-        }
 
         function handleUpdate(e) {
             e.preventDefault();
@@ -190,56 +119,26 @@
             const file = form.update.files[0];
             const updateType = form.dataset.type;
             
-            if (!file) {
-                alert('Please select a file.');
-                return;
-            }
+            if (!file) return;
             
-            // Validate file name pattern
-            if (updateType === 'firmware' && !file.name.startsWith('upgrade_filaman_firmware_')) {
-                alert('Please select a valid firmware file (upgrade_filaman_firmware_*.bin)');
-                return;
-            }
-            if (updateType === 'webpage' && !file.name.startsWith('upgrade_filaman_website_')) {
-                alert('Please select a valid webpage file (upgrade_filaman_website_*.bin)');
-                return;
-            }
-            
-            // Reset UI
             updateInProgress = true;
             progressContainer.style.display = 'block';
             status.style.display = 'none';
-            status.className = 'status';
             progress.style.width = '0%';
-            progress.textContent = '0%';
             
-            // Disable submit buttons
             document.querySelectorAll('form input[type=submit]').forEach(btn => btn.disabled = true);
 
-            // Send update
             const xhr = new XMLHttpRequest();
             xhr.open('POST', '/update', true);
-            
             xhr.onload = function() {
-                if (xhr.status !== 200 && !progress.textContent.startsWith('100')) {
-                    status.textContent = "Update failed: " + (xhr.responseText || "Unknown error");
-                    status.className = 'status error';
+                if (xhr.status !== 200) {
+                    status.textContent = "Update failed: " + xhr.responseText;
                     status.style.display = 'block';
                     updateInProgress = false;
                     document.querySelectorAll('form input[type=submit]').forEach(btn => btn.disabled = false);
                 }
             };
             
-            xhr.onerror = function() {
-                if (!progress.textContent.startsWith('100')) {
-                    status.textContent = "Network error during update";
-                    status.className = 'status error';
-                    status.style.display = 'block';
-                    updateInProgress = false;
-                    document.querySelectorAll('form input[type=submit]').forEach(btn => btn.disabled = false);
-                }
-            };
-
             const formData = new FormData();
             formData.append('update', file);
             xhr.send(formData);

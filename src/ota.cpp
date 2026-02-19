@@ -6,8 +6,7 @@
 
 
 // Globale Variablen für Config Backups hinzufügen
-String bambuCredentialsBackup;
-String spoolmanUrlBackup;
+String filamanConfigBackup;
 
 // Globale Variable für den Update-Typ
 static int currentUpdateCommand = 0;
@@ -56,7 +55,7 @@ void restoreJsonConfigs() {
 
 void espRestart() {
     yield();
-    vTaskDelay(5000 / portTICK_PERIOD_MS);
+    vTaskDelay(pdMS_TO_TICKS(5000));
 
     ESP.restart();
 }
@@ -137,9 +136,9 @@ void handleUpdate(AsyncWebServer &server) {
             if (isSpiffsUpdate) {
                 // Backup vor dem Update
                 sendUpdateProgress(0, "backup", "Backing up configurations...");
-                vTaskDelay(200 / portTICK_PERIOD_MS);
+                vTaskDelay(pdMS_TO_TICKS(200));
                 backupJsonConfigs();
-                vTaskDelay(200 / portTICK_PERIOD_MS);
+                vTaskDelay(pdMS_TO_TICKS(200));
                 
                 const esp_partition_t *partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, NULL);
                 if (!partition || !Update.begin(partition->size, U_SPIFFS)) {
@@ -147,14 +146,14 @@ void handleUpdate(AsyncWebServer &server) {
                     return;
                 }
                 sendUpdateProgress(5, "starting", "Starting SPIFFS update...");
-                vTaskDelay(200 / portTICK_PERIOD_MS);
+                vTaskDelay(pdMS_TO_TICKS(200));
             } else {
                 if (!Update.begin(updateTotalSize)) {
                     request->send(400, "application/json", "{\"success\":false,\"message\":\"Update initialization failed\"}");
                     return;
                 }
                 sendUpdateProgress(0, "starting", "Starting firmware update...");
-                vTaskDelay(200 / portTICK_PERIOD_MS);
+                vTaskDelay(pdMS_TO_TICKS(200));
             }
         }
 
@@ -180,7 +179,7 @@ void handleUpdate(AsyncWebServer &server) {
             if (currentProgress != lastProgress && (currentProgress % 10 == 0 || final)) {
                 sendUpdateProgress(currentProgress, "uploading");
                 oledShowProgressBar(currentProgress, 100, "Update", "Download");
-                vTaskDelay(50 / portTICK_PERIOD_MS);
+                vTaskDelay(pdMS_TO_TICKS(50));
                 lastProgress = currentProgress;
             }
         }
@@ -204,7 +203,7 @@ void handleUpdate(AsyncWebServer &server) {
 
         // Erste 100% Nachricht
         ws.textAll("{\"type\":\"updateProgress\",\"progress\":100,\"status\":\"success\",\"message\":\"Update successful! Restarting device...\"}");
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
+        vTaskDelay(pdMS_TO_TICKS(2000));
         
         AsyncWebServerResponse *response = request->beginResponse(200, "application/json", 
             "{\"success\":true,\"message\":\"Update successful! Restarting device...\"}");

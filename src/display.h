@@ -19,7 +19,7 @@ int oled_center_v(const String &text);
 void oledShowProgressBar(const uint8_t step, const uint8_t numSteps, const char* largeText, const char* statusMessage);
 
 void oledShowWeight(uint16_t weight);
-void oledShowMessage(const String &message, uint8_t size = 2);
+void oledDisplayText(const String &message, uint8_t size = 2);
 void oledShowTopRow();
 void oledShowIcon(const char* icon);
 

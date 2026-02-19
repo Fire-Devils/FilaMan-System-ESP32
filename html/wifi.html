@@ -1,4 +1,4 @@
-<!-- head --><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -30,8 +30,7 @@
         <nav style="display: flex; gap: 1rem;">
             <a href="/">Start</a>
             <a href="/waage">Scale</a>
-            <a href="/config">Config</a>
-            <a href="/about">About</a>
+            <a href="/setup">Setup</a>
             <a href="/upgrade">Upgrade</a>
         </nav>
         <div class="status-container">
@@ -42,16 +41,27 @@
         </div>
     </div>
 
-<!-- head -->
-
     <div class="content">
-        <h1>WiFi Configuration Page</h1>
-        <form action="/setToken" method="post">
-            <label for="deviceToken">Device Token:</label><br>
-            <input type="text" id="deviceToken" name="deviceToken"><br>
-            <input type="submit" value="Set Token">
-        </form>
-        <p>Configure your WiFi settings here.</p>
+        <h1>WiFi Configuration</h1>
+        <p>Your device is connected to WiFi.</p>
+        <p>To change WiFi settings, you can reset the WiFi configuration by holding the hardware button (if available) or using the WiFi manager portal.</p>
     </div>
+
+    <script>
+        let ws = null;
+        function connectWebSocket() {
+            ws = new WebSocket(`ws://${window.location.hostname}/ws`);
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'heartbeat') {
+                    document.getElementById('filamanDot').style.backgroundColor = data.filaman_connected ? '#4caf50' : '#f44336';
+                    document.getElementById('ramStatus').textContent = data.freeHeap + ' KB free';
+                }
+            };
+            ws.onclose = () => setTimeout(connectWebSocket, 2000);
+        }
+        connectWebSocket();
+        setInterval(() => { if(ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type:'heartbeat'})); }, 5000);
+    </script>
 </body>
 </html>

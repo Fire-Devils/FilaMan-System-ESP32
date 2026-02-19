@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <WiFi.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #include "wlan.h"
 #include "config.h"
@@ -86,6 +88,11 @@ unsigned long lastWeightReadTime = 0;
 const unsigned long weightReadInterval = 1000; // 1 second
 
 unsigned long lastFilamanHeartbeatTime = 0;
+unsigned long lastWifiCheckTime = 0;
+unsigned long lastTopRowUpdateTime = 0;
+
+uint8_t weightSend = 0;
+int16_t lastWeight = 0;
 
 // Button debounce variables
 unsigned long lastButtonPress = 0;
@@ -125,8 +132,8 @@ void loop() {
   {
     // Do not show the warning if the calibratin process is onging
     if(!scaleCalibrationActive){
-      oledShowMessage("Scale not calibrated");
-      vTaskDelay(1000 / portTICK_PERIOD_MS);
+      oledDisplayText("Scale not calibrated");
+      vTaskDelay(pdMS_TO_TICKS(1000));
     }
   } 
   else 
@@ -139,7 +146,7 @@ void loop() {
       int16_t displayWeight = getFilteredDisplayWeight();
       if (mainTaskWasPaused || (weight != lastWeight && nfcReaderState == NFC_IDLE))
       {
-        (displayWeight < 2) ? ((displayWeight < -2) ? oledShowMessage("!! -0") : oledShowWeight(0)) : oledShowWeight(displayWeight);
+        (displayWeight < 2) ? ((displayWeight < -2) ? oledDisplayText("!! -0") : oledShowWeight(0)) : oledShowWeight(displayWeight);
       }
       mainTaskWasPaused = false;
     }

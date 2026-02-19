@@ -8,7 +8,6 @@
 #include <ArduinoJson.h>
 #include <Update.h>
 #include <AsyncTCP.h>
-#include "bambu.h"
 #include "nfc.h"
 #include "scale.h"
 #include "esp_task_wdt.h"

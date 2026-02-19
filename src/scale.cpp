@@ -167,7 +167,7 @@ void scale_loop(void * parameter) {
         if (scaleTareRequest == true || (autoTare && scale_tare_counter >= 20)) 
         {
           Serial.println("Re-Tare scale");
-          oledShowMessage("TARE Scale");
+          oledDisplayText("TARE Scale");
           vTaskDelay(pdMS_TO_TICKS(1000));
           scale.tare();
           resetWeightFilter(); // Reset filter after manual tare
@@ -382,7 +382,7 @@ uint8_t calibrate_scale() {
   {
     Serial.println("HX711 not found.");
     
-    oledShowMessage("HX711 not found");
+    oledDisplayText("HX711 not found");
 
     for (uint16_t i = 0; i < 30000; i++) {
       yield();

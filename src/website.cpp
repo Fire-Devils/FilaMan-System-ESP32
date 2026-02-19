@@ -171,12 +171,10 @@ void setupWebserver(AsyncWebServer &server) {
 
     loadFilamanConfig();
 
-    // Route für about
-    server.on("/about", HTTP_GET, [](AsyncWebServerRequest *request){
-        AsyncWebServerResponse *response = request->beginResponse(LittleFS, "/index.html.gz", "text/html");
-        response->addHeader("Content-Encoding", "gzip");
-        response->addHeader("Cache-Control", CACHE_CONTROL);
-        request->send(response);
+    // Route für Start (Index)
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+        String html = loadHtmlWithHeader("/index.html");
+        request->send(200, "text/html", html);
     });
 
     // Route für Waage
@@ -186,17 +184,9 @@ void setupWebserver(AsyncWebServer &server) {
         request->send(200, "text/html", html);
     });
 
-    // Route für RFID
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-        AsyncWebServerResponse *response = request->beginResponse(LittleFS, "/rfid.html.gz", "text/html");
-        response->addHeader("Content-Encoding", "gzip");
-        response->addHeader("Cache-Control", CACHE_CONTROL);
-        request->send(response);
-    });
-
-    // Route für Config & Registration
-    server.on("/config", HTTP_GET, [](AsyncWebServerRequest *request){
-        String html = loadHtmlWithHeader("/config.html");
+    // Route für Setup & Registration
+    server.on("/setup", HTTP_GET, [](AsyncWebServerRequest *request){
+        String html = loadHtmlWithHeader("/setup.html");
         html.replace("{{filamanUrl}}", filamanUrl);
         html.replace("{{registered}}", filamanRegistered ? "Yes" : "No");
         request->send(200, "text/html", html);
@@ -227,7 +217,7 @@ void setupWebserver(AsyncWebServer &server) {
         String payloadString;
         serializeJson(doc, payloadString);
         
-        bool isSpool = doc.containsKey("spool_id");
+        bool isSpool = !doc["spool_id"].isNull();
         startWriteJsonToTag(isSpool, payloadString.c_str());
         
         request->send(200, "application/json", "{\"status\": \"writing\"}");

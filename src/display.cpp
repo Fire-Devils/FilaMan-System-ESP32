@@ -145,7 +145,7 @@ void oledShowMultilineMessage(const String &message, uint8_t size) {
     display.display();
 }
 
-void oledShowMessage(const String &message, uint8_t size) {
+void oledDisplayText(const String &message, uint8_t size) {
     oledcleardata();
     display.setTextSize(size);
     display.setTextWrap(false);
@@ -177,19 +177,7 @@ void oledShowTopRow() {
 
     // Do not show status indicators during boot
     if(!booting){
-        if(bambuDisabled == false) {
-            if (bambu_connected == 1) {
-                display.drawBitmap(50, 0, bitmap_bambu_on , 16, 16, WHITE);
-            } else {
-                if(iconToggle){
-                    display.drawBitmap(50, 0, bitmap_bambu_on , 16, 16, WHITE);
-                    display.drawLine(50, 15, 66, 0, WHITE);
-                    display.drawLine(51, 15, 67, 0, WHITE);
-                }
-            }
-        }
-
-        if (spoolmanConnected) {
+        if (filamanConnected) {
             display.drawBitmap(80, 0, bitmap_spoolman_on , 16, 16, WHITE);
         } else {
             if(iconToggle){
