@@ -7,7 +7,6 @@
 #include "website.h"
 #include "api.h"
 #include "display.h"
-#include "bambu.h"
 #include "nfc.h"
 #include "scale.h"
 #include "esp_task_wdt.h"
@@ -42,9 +41,6 @@ void setup() {
 
   // Spoolman API
   initSpoolman();
-
-  // Bambu MQTT
-  setupMqtt();
 
   // NFC Reader
   startNfc();
@@ -134,38 +130,6 @@ void loop() {
     checkSpoolmanInstance();
   }
 
-  // Wenn Bambu auto set Spool aktiv
-  if (bambuCredentials.autosend_enable && autoSetToBambuSpoolId > 0 && !nfcWriteInProgress) 
-  {
-    if (!bambuDisabled && !bambu_connected) 
-    {
-      bambu_restart();
-    }
-
-    if (intervalElapsed(currentMillis, lastAutoSetBambuAmsTime, autoSetBambuAmsInterval)) 
-    {
-      if (nfcReaderState == NFC_IDLE)
-      {
-        lastAutoSetBambuAmsTime = currentMillis;
-        oledShowMessage("Auto Set         " + String(bambuCredentials.autosend_time - autoAmsCounter) + "s");
-        autoAmsCounter++;
-
-        if (autoAmsCounter >= bambuCredentials.autosend_time) 
-        {
-          autoSetToBambuSpoolId = 0;
-          autoAmsCounter = 0;
-          if (!nfcWriteInProgress) {
-            oledShowWeight(weight);
-          }
-        }
-      }
-      else
-      {
-        autoAmsCounter = 0;
-      }
-    }
-  }
-
   // If scale is not calibrated, only show a warning
   if (!scaleCalibrated) 
   {
@@ -225,26 +189,6 @@ void loop() {
     {
       // set the current tag as processed to prevent it beeing processed again
       tagProcessed = true;
-
-      if (updateSpoolWeight(activeSpoolId, weight)) 
-      {
-        weightSend = 1;
-        
-        // Set Bambu spool ID for auto-send if enabled
-        if (bambuCredentials.autosend_enable) 
-        {
-          autoSetToBambuSpoolId = activeSpoolId.toInt();
-        }
-        if (octoEnabled) 
-        {
-          updateOctoSpoolId = activeSpoolId.toInt();
-        }
-      }
-      else
-      {
-        oledShowIcon("failed");
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
-      }
     }
 
     // Handle successful tag write: Send weight to Spoolman but NEVER auto-send to Bambu
@@ -264,12 +208,6 @@ void loop() {
         oledShowIcon("failed");
         vTaskDelay(2000 / portTICK_PERIOD_MS);
       }
-    }
-
-    if(octoEnabled && sendOctoUpdate && spoolmanApiState == API_IDLE)
-    {
-      updateSpoolOcto(updateOctoSpoolId);
-      sendOctoUpdate = false;
     }
   }
   

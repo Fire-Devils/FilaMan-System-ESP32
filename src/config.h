@@ -6,18 +6,8 @@
 #define BAMBU_DEFAULT_AUTOSEND_TIME         60
 
 #define NVS_NAMESPACE_API                   "api"
-#define NVS_KEY_SPOOLMAN_URL                "spoolmanUrl"
-#define NVS_KEY_OCTOPRINT_ENABLED           "octoEnabled"
-#define NVS_KEY_OCTOPRINT_URL               "octoUrl"
-#define NVS_KEY_OCTOPRINT_TOKEN             "octoToken"
-
-#define NVS_NAMESPACE_BAMBU                 "bambu"
-#define NVS_KEY_BAMBU_IP                    "bambuIp"
-#define NVS_KEY_BAMBU_ACCESSCODE            "bambuCode"
-#define NVS_KEY_BAMBU_SERIAL                "bambuSerial"
-#define NVS_KEY_BAMBU_AUTOSEND_ENABLE       "autosendEnable"
-#define NVS_KEY_BAMBU_AUTOSEND_TIME         "autosendTime"
-#define NVS_KEY_BAMBU_PRINTER_MODEL         "printerModel"
+#define NVS_KEY_FILAMAN_URL                "filamanUrl"
+#define NVS_KEY_FILAMAN_TOKEN              "filamanToken"
 
 #define NVS_NAMESPACE_SCALE                 "scale"
 #define NVS_KEY_CALIBRATION                 "cal_value"
@@ -72,9 +62,6 @@ extern uint8_t rfidTaskCore;
 extern uint8_t rfidTaskPrio;
 
 extern uint8_t rfidWriteTaskPrio;
-
-extern uint8_t mqttTaskCore;
-extern uint8_t mqttTaskPrio;
 
 extern uint8_t scaleTaskCore;
 extern uint8_t scaleTaskPrio;

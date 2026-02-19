@@ -7,7 +7,6 @@
 #include "api.h"
 #include "esp_task_wdt.h"
 #include "scale.h"
-#include "bambu.h"
 #include "main.h"
 
 //Adafruit_PN532 nfc(PN532_SCK, PN532_MISO, PN532_MOSI, PN532_SS);

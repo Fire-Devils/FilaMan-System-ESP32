@@ -48,9 +48,6 @@ uint8_t rfidTaskPrio = 1;
 
 uint8_t rfidWriteTaskPrio = 1;
 
-uint8_t mqttTaskCore = 1;
-uint8_t mqttTaskPrio = 1;
-
 uint8_t scaleTaskCore = 0;
 uint8_t scaleTaskPrio = 1;
 // ***** Task Prios
