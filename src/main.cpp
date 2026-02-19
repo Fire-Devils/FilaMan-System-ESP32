@@ -124,7 +124,7 @@ void loop() {
   // Periodic FilaMan heartbeat
   if (intervalElapsed(currentMillis, lastFilamanHeartbeatTime, FILAMAN_HEARTBEAT_INTERVAL)) 
   {
-    sendHeartbeat();
+    sendHeartbeatAsync();
   }
 
   // If scale is not calibrated, only show a warning
@@ -190,10 +190,9 @@ void loop() {
       // Get UID from nfcJsonData or similar (nfc.cpp should set it)
       // For now, use activeSpoolId if available
       int sId = activeSpoolId.toInt();
-      if (sendWeight(sId, activeTagUuid, weight)) {
-          weightSend = 1;
-          Serial.println("Weight sent to FilaMan");
-      }
+      sendWeightAsync(sId, activeTagUuid, weight);
+      weightSend = 1;
+      Serial.println("Weight queued for FilaMan");
     }
 
     // Handle successful tag write
@@ -201,10 +200,9 @@ void loop() {
     {
       tagProcessed = true;
       int sId = activeSpoolId.toInt();
-      if (sendWeight(sId, activeTagUuid, weight)) {
-          weightSend = 1;
-          Serial.println("Weight sent to FilaMan after tag write");
-      }
+      sendWeightAsync(sId, activeTagUuid, weight);
+      weightSend = 1;
+      Serial.println("Weight queued for FilaMan after tag write");
     }
   }
   

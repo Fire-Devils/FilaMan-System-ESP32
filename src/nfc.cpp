@@ -1268,7 +1268,7 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
         Serial.println("Location Tag found!");
         int locId = doc["location_id"].as<int>();
         int sId = lastSpoolId.toInt();
-        sendLocation(sId, "", locId, "");
+        sendLocationAsync(sId, "", locId, "");
       }
       else 
       {
@@ -1867,15 +1867,6 @@ void scanRfidTask(void * parameter) {
 
       foundNfcTag(nullptr, success);
       
-      // Reset activeSpoolId and activeTagUuid immediately when no tag is detected
-      if (!success) {
-        activeSpoolId = "";
-        activeTagUuid = "";
-        Serial.println("Tag entfernt");
-        oledShowWeight(weight);
-      }
-
-      
       // As long as there is still a tag on the reader, do not try to read it again
       if (success && nfcReaderState == NFC_IDLE)
       {
@@ -1989,12 +1980,11 @@ void scanRfidTask(void * parameter) {
 
       if (!success && nfcReaderState != NFC_IDLE && !nfcReadingTaskSuspendRequest)
       {
+        Serial.printf("NFC: Tag removed (Previous state: %d)\n", nfcReaderState);
         nfcReaderState = NFC_IDLE;
-        //uidString = "";
         nfcJsonData = "";
         activeSpoolId = "";
         activeTagUuid = "";
-        Serial.println("Tag entfernt");
         oledShowWeight(weight);
       }
 
@@ -2012,7 +2002,7 @@ void scanRfidTask(void * parameter) {
  // Reduced from 5 seconds to 3 seconds
       } else {
         // Faster scanning when no tag or idle state
-                vTaskDelay(pdMS_TO_TICKS(150)); 
+                vTaskDelay(pdMS_TO_TICKS(250)); 
  // Faster scan interval
       }
 

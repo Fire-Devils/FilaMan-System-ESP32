@@ -25,6 +25,11 @@ extern bool filamanConnected;
 // FilaMan API functions
 bool initFilaman();
 bool registerDevice(const String& deviceCode);
+void sendHeartbeatAsync();
+void sendWeightAsync(int spoolId, String tagUuid, float weight);
+void sendLocationAsync(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid);
+
+// Internal blocking functions (used by async task)
 bool sendHeartbeat();
 bool sendWeight(int spoolId, String tagUuid, float weight);
 bool sendLocation(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid);

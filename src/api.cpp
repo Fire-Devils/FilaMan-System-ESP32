@@ -12,6 +12,20 @@
 volatile filamanApiStateType filamanApiState = API_IDLE;
 bool filamanConnected = false;
 
+struct ApiRequest {
+    FilamanApiRequestType type;
+    int id1;
+    int id2;
+    String str1;
+    String str2;
+    float val;
+    bool active = false;
+};
+
+#define MAX_API_QUEUE 10
+ApiRequest apiQueue[MAX_API_QUEUE];
+SemaphoreHandle_t queueMutex;
+
 void saveFilamanConfig() {
     Preferences preferences;
     preferences.begin(NVS_NAMESPACE_API, false);
@@ -36,136 +50,174 @@ bool checkFilamanRegistration() {
 
 bool registerDevice(const String& deviceCode) {
     if (filamanUrl.length() == 0) return false;
-
     HTTPClient http;
-    String url = filamanUrl + "/api/v1/devices/register";
-    
-    http.begin(url);
+    http.setTimeout(5000);
+    http.begin(filamanUrl + "/api/v1/devices/register");
     http.addHeader("Content-Type", "application/json");
     http.addHeader("X-Device-Code", deviceCode);
-    
     int httpCode = http.POST("{}");
-    bool success = false;
-
-    if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_CREATED) {
-        String payload = http.getString();
+    if (httpCode == 200 || httpCode == 201) {
         JsonDocument doc;
-        DeserializationError error = deserializeJson(doc, payload);
-        if (!error && doc["token"].is<String>()) {
-            filamanToken = doc["token"].as<String>();
-            filamanRegistered = true;
-            saveFilamanConfig();
-            success = true;
-            Serial.println("Device successfully registered!");
+        if (!deserializeJson(doc, http.getString())) {
+            if (doc["token"].is<String>()) {
+                filamanToken = doc["token"].as<String>();
+                filamanRegistered = true;
+                saveFilamanConfig();
+                http.end();
+                return true;
+            }
         }
-    } else {
-        Serial.printf("Registration failed, HTTP code: %d\n", httpCode);
     }
-    
     http.end();
-    return success;
+    return false;
 }
 
 bool sendHeartbeat() {
-    if (!checkFilamanRegistration()) return false;
-
+    if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
     HTTPClient http;
-    String url = filamanUrl + "/api/v1/devices/heartbeat";
-    
-    http.begin(url);
+    http.setTimeout(3000);
+    http.begin(filamanUrl + "/api/v1/devices/heartbeat");
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", "Device " + filamanToken);
-    
     JsonDocument doc;
     doc["ip_address"] = WiFi.localIP().toString();
     String payload;
     serializeJson(doc, payload);
-    
     int httpCode = http.POST(payload);
-    bool success = (httpCode == HTTP_CODE_OK);
-    
-    if (success) {
-        filamanConnected = true;
-    } else {
-        Serial.printf("Heartbeat failed, HTTP code: %d\n", httpCode);
-        if (httpCode == 401) {
-            filamanRegistered = false; // Token might be invalid
-            saveFilamanConfig();
-        }
-        filamanConnected = false;
-    }
-    
+    filamanConnected = (httpCode == 200);
     http.end();
-    return success;
+    return filamanConnected;
 }
 
 bool sendWeight(int spoolId, String tagUuid, float measuredWeight) {
-    if (!checkFilamanRegistration()) return false;
-
+    if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
     HTTPClient http;
-    String url = filamanUrl + "/api/v1/devices/scale/weight";
-    
-    http.begin(url);
+    http.setTimeout(3000);
+    http.begin(filamanUrl + "/api/v1/devices/scale/weight");
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", "Device " + filamanToken);
-    
     JsonDocument doc;
     if (spoolId > 0) doc["spool_id"] = spoolId;
     if (tagUuid.length() > 0) doc["tag_uuid"] = tagUuid;
     doc["measured_weight_g"] = measuredWeight;
-    
     String payload;
     serializeJson(doc, payload);
-    
     int httpCode = http.POST(payload);
-    bool success = (httpCode == HTTP_CODE_OK);
-    
-    if (!success) {
-        Serial.printf("Weight update failed, HTTP code: %d\n", httpCode);
-    }
-    
     http.end();
-    return success;
+    return (httpCode == 200);
 }
 
 bool sendLocation(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid) {
-    if (!checkFilamanRegistration()) return false;
-
+    if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
     HTTPClient http;
-    String url = filamanUrl + "/api/v1/devices/scale/locate";
-    
-    http.begin(url);
+    http.setTimeout(3000);
+    http.begin(filamanUrl + "/api/v1/devices/scale/locate");
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", "Device " + filamanToken);
-    
     JsonDocument doc;
     if (spoolId > 0) doc["spool_id"] = spoolId;
     if (spoolTagUuid.length() > 0) doc["spool_tag_uuid"] = spoolTagUuid;
     if (locationId > 0) doc["location_id"] = locationId;
     if (locationTagUuid.length() > 0) doc["location_tag_uuid"] = locationTagUuid;
-    
     String payload;
     serializeJson(doc, payload);
-    
     int httpCode = http.POST(payload);
-    bool success = (httpCode == HTTP_CODE_OK);
-    
-    if (!success) {
-        Serial.printf("Location update failed, HTTP code: %d\n", httpCode);
-    }
-    
     http.end();
-    return success;
+    return (httpCode == 200);
+}
+
+void filamanApiTask(void* pvParameters) {
+    for (;;) {
+        ApiRequest req;
+        bool hasReq = false;
+        
+        if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            for(int i=0; i<MAX_API_QUEUE; i++) {
+                if(apiQueue[i].active) {
+                    req = apiQueue[i];
+                    apiQueue[i].active = false;
+                    hasReq = true;
+                    break;
+                }
+            }
+            xSemaphoreGive(queueMutex);
+        }
+
+        if (hasReq) {
+            filamanApiState = API_TRANSMITTING;
+            switch (req.type) {
+                case API_REQUEST_HEARTBEAT: sendHeartbeat(); break;
+                case API_REQUEST_WEIGHT: sendWeight(req.id1, req.str1, req.val); break;
+                case API_REQUEST_LOCATE: sendLocation(req.id1, req.str1, req.id2, req.str2); break;
+                default: break;
+            }
+            filamanApiState = API_IDLE;
+        }
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void sendHeartbeatAsync() {
+    if (!checkFilamanRegistration()) return;
+    if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        // Prevent duplicate heartbeats
+        for(int i=0; i<MAX_API_QUEUE; i++) if(apiQueue[i].active && apiQueue[i].type == API_REQUEST_HEARTBEAT) {
+            xSemaphoreGive(queueMutex);
+            return;
+        }
+        for(int i=0; i<MAX_API_QUEUE; i++) if(!apiQueue[i].active) {
+            apiQueue[i].type = API_REQUEST_HEARTBEAT;
+            apiQueue[i].id1 = 0;
+            apiQueue[i].id2 = 0;
+            apiQueue[i].str1 = "";
+            apiQueue[i].str2 = "";
+            apiQueue[i].val = 0.0f;
+            apiQueue[i].active = true;
+            break;
+        }
+        xSemaphoreGive(queueMutex);
+    }
+}
+
+void sendWeightAsync(int spoolId, String tagUuid, float weight) {
+    if (!checkFilamanRegistration()) return;
+    if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        for(int i=0; i<MAX_API_QUEUE; i++) if(!apiQueue[i].active) {
+            apiQueue[i].type = API_REQUEST_WEIGHT;
+            apiQueue[i].id1 = spoolId;
+            apiQueue[i].id2 = 0;
+            apiQueue[i].str1 = tagUuid;
+            apiQueue[i].str2 = "";
+            apiQueue[i].val = weight;
+            apiQueue[i].active = true;
+            break;
+        }
+        xSemaphoreGive(queueMutex);
+    }
+}
+
+void sendLocationAsync(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid) {
+    if (!checkFilamanRegistration()) return;
+    if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        for(int i=0; i<MAX_API_QUEUE; i++) if(!apiQueue[i].active) {
+            apiQueue[i].type = API_REQUEST_LOCATE;
+            apiQueue[i].id1 = spoolId;
+            apiQueue[i].id2 = locationId;
+            apiQueue[i].str1 = spoolTagUuid;
+            apiQueue[i].str2 = locationTagUuid;
+            apiQueue[i].val = 0.0f;
+            apiQueue[i].active = true;
+            break;
+        }
+        xSemaphoreGive(queueMutex);
+    }
 }
 
 bool initFilaman() {
-    oledShowProgressBar(3, 7, DISPLAY_BOOT_TEXT, "FilaMan init");
     loadFilamanConfig();
-    
-    if (checkFilamanRegistration()) {
-        sendHeartbeat();
-    }
-    
-    oledShowTopRow();
+    queueMutex = xSemaphoreCreateMutex();
+    // Reduce stack size to 6k and set priority to 0 (lowest) to prevent starving WiFi stack
+    xTaskCreatePinnedToCore(filamanApiTask, "FilaManApi", 6144, NULL, 0, NULL, 0); 
+    if (checkFilamanRegistration()) sendHeartbeatAsync();
     return true;
 }

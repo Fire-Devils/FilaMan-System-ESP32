@@ -1,4 +1,5 @@
 #include "nfc.h"
+#include "scale.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include "config.h"
@@ -35,6 +36,7 @@ uint8_t pauseMainTask = 0;
 bool scaleCalibrated;
 bool autoTare = true;
 bool scaleCalibrationActive = false;
+volatile bool scaleCalibrationRequest = false;
 
 // ##### Weight stabilization functions #####
 
@@ -178,6 +180,12 @@ void scale_loop(void * parameter) {
           weight = 0; // Reset global weight variable after tare
         }
 
+        // Check for calibration request
+        if (scaleCalibrationRequest) {
+            scaleCalibrationRequest = false;
+            calibrate_scale();
+        }
+
         // Get raw weight reading
         float rawWeight = scale.get_units();
         
@@ -286,7 +294,8 @@ uint8_t calibrate_scale() {
   scaleCalibrationActive = true;
 
   if (RfidReaderTask != NULL) vTaskSuspend(RfidReaderTask);
-  if (ScaleTask != NULL) vTaskSuspend(ScaleTask);
+  // Do not suspend ScaleTask if we are running inside it
+  if (ScaleTask != NULL && xTaskGetCurrentTaskHandle() != ScaleTask) vTaskSuspend(ScaleTask);
 
   pauseMainTask = 1;
   
@@ -393,7 +402,7 @@ uint8_t calibrate_scale() {
   }
 
   if (RfidReaderTask != NULL) vTaskResume(RfidReaderTask);
-  if (ScaleTask != NULL) vTaskResume(ScaleTask);
+  if (ScaleTask != NULL && xTaskGetCurrentTaskHandle() != ScaleTask) vTaskResume(ScaleTask);
   pauseMainTask = 0;
   scaleCalibrationActive = false;
 
