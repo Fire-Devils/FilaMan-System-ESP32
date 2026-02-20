@@ -19,6 +19,8 @@ struct ApiRequest {
     String str1;
     String str2;
     float val;
+    bool bool1; // success
+    String str3; // error message
     bool active = false;
 };
 
@@ -126,6 +128,28 @@ bool sendLocation(int spoolId, String spoolTagUuid, int locationId, String locat
     return (httpCode == 200);
 }
 
+bool sendRfidResult(String tagUuid, int spoolId, int locationId, bool success, String errorMessage) {
+    if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
+    HTTPClient http;
+    http.setTimeout(5000);
+    http.begin(filamanUrl + "/api/v1/devices/rfid-result");
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", "Device " + filamanToken);
+    
+    JsonDocument doc;
+    doc["success"] = success;
+    if (tagUuid.length() > 0) doc["tag_uuid"] = tagUuid;
+    if (spoolId > 0) doc["spool_id"] = spoolId;
+    if (locationId > 0) doc["location_id"] = locationId;
+    if (errorMessage.length() > 0) doc["error_message"] = errorMessage;
+    
+    String payload;
+    serializeJson(doc, payload);
+    int httpCode = http.POST(payload);
+    http.end();
+    return (httpCode == 200);
+}
+
 void filamanApiTask(void* pvParameters) {
     for (;;) {
         ApiRequest req;
@@ -149,6 +173,7 @@ void filamanApiTask(void* pvParameters) {
                 case API_REQUEST_HEARTBEAT: sendHeartbeat(); break;
                 case API_REQUEST_WEIGHT: sendWeight(req.id1, req.str1, req.val); break;
                 case API_REQUEST_LOCATE: sendLocation(req.id1, req.str1, req.id2, req.str2); break;
+                case API_REQUEST_RFID_RESULT: sendRfidResult(req.str1, req.id1, req.id2, req.bool1, req.str3); break;
                 default: break;
             }
             filamanApiState = API_IDLE;
@@ -206,6 +231,23 @@ void sendLocationAsync(int spoolId, String spoolTagUuid, int locationId, String 
             apiQueue[i].str1 = spoolTagUuid;
             apiQueue[i].str2 = locationTagUuid;
             apiQueue[i].val = 0.0f;
+            apiQueue[i].active = true;
+            break;
+        }
+        xSemaphoreGive(queueMutex);
+    }
+}
+
+void sendRfidResultAsync(String tagUuid, int spoolId, int locationId, bool success, String errorMessage) {
+    if (!checkFilamanRegistration()) return;
+    if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        for(int i=0; i<MAX_API_QUEUE; i++) if(!apiQueue[i].active) {
+            apiQueue[i].type = API_REQUEST_RFID_RESULT;
+            apiQueue[i].str1 = tagUuid;
+            apiQueue[i].id1 = spoolId;
+            apiQueue[i].id2 = locationId;
+            apiQueue[i].bool1 = success;
+            apiQueue[i].str3 = errorMessage;
             apiQueue[i].active = true;
             break;
         }

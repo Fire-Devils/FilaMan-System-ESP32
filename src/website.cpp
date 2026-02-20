@@ -205,10 +205,24 @@ void setupWebserver(AsyncWebServer &server) {
             request->send(400, "application/json", "{\"error\": \"Invalid JSON\"}");
             return;
         }
+
+        // Check if NFC is busy
+        if (nfcWriteInProgress) {
+            request->send(503, "application/json", "{\"error\": \"NFC busy\"}");
+            return;
+        }
+
         String payloadString;
         serializeJson(doc, payloadString);
-        // Pass request to NFC task - it will handle the response
-        startWriteJsonToTag(!doc["spool_id"].isNull(), payloadString.c_str(), request);
+        
+        int spoolId = doc["spool_id"] | 0;
+        int locationId = doc["location_id"] | 0;
+
+        // Start write task (fire and forget)
+        startWriteJsonToTag(!doc["spool_id"].isNull(), payloadString.c_str(), spoolId, locationId);
+        
+        // Respond immediately
+        request->send(200, "application/json", "{\"success\": true, \"message\": \"Schreibvorgang wurde gestartet. Bitte Tag bereit halten...\"}");
     });
 
     server.on("/api/version", HTTP_GET, [](AsyncWebServerRequest *request){

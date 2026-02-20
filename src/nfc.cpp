@@ -13,6 +13,8 @@
 Adafruit_PN532 nfc(PN532_IRQ, PN532_RESET);
 
 TaskHandle_t RfidReaderTask;
+// AsyncWebServerRequest* volatile activeNfcWriteRequest = nullptr; // Removed
+SemaphoreHandle_t nfcRequestMutex = NULL;
 
 JsonDocument rfidData;
 String activeSpoolId = "";
@@ -23,11 +25,6 @@ bool tagProcessed = false;
 volatile bool nfcReadingTaskSuspendRequest = false;
 volatile bool nfcReadingTaskSuspendState = false;
 volatile bool nfcWriteInProgress = false; // Prevent any tag operations during write
-
-struct NfcWriteParameterType {
-  bool tagType;
-  char* payload;
-};
 
 volatile nfcReaderStateType nfcReaderState = NFC_IDLE;
 // 0 = nicht gelesen
@@ -1590,22 +1587,25 @@ void writeJsonToTag(void *parameter) {
   // Show waiting message for tag detection
   oledShowProgressBar(0, 1, "Write Tag", "Warte auf Tag");
   
-  // Wait 10sec for tag
+  // Wait up to 30 seconds for tag
   uint8_t success = 0;
   String uidString = "";
-  for (uint16_t i = 0; i < 20; i++) {
+  unsigned long startTime = millis();
+  
+  while (millis() - startTime < 30000) {
     uint8_t uid[] = { 0, 0, 0, 0, 0, 0, 0 };  // Buffer to store the returned UID
     uint8_t uidLength;
     // yield before potentially waiting for 400ms
     yield();
     esp_task_wdt_reset();
+    
     success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 400);
+    
     if (success) {
       for (uint8_t i = 0; i < uidLength; i++) {
-        //TBD: Rework to remove all the string operations
         uidString += String(uid[i], HEX);
         if (i < uidLength - 1) {
-            uidString += ":"; // Optional: Trennzeichen hinzufügen
+            uidString += ":"; // Trennzeichen hinzufügen
         }
       }
       foundNfcTag(nullptr, success);
@@ -1614,7 +1614,7 @@ void writeJsonToTag(void *parameter) {
 
     yield();
     esp_task_wdt_reset();
-    vTaskDelay(pdMS_TO_TICKS(1));
+    vTaskDelay(pdMS_TO_TICKS(50));
   }
 
   if (success)
@@ -1710,7 +1710,11 @@ void writeJsonToTag(void *parameter) {
         
         Serial.println("=========================================");
         
-        vTaskResume(RfidReaderTask);
+        // Send success response to API with tag_uuid (with separators)
+        Serial.println("Sending result to API via fire-and-forget...");
+        sendRfidResultAsync(uidString, params->spoolId, params->locationId, true, "");
+        
+        // vTaskResume(RfidReaderTask); // Don't resume as it was not suspended
         vTaskDelay(pdMS_TO_TICKS(500));        
     } 
     else 
@@ -1719,6 +1723,10 @@ void writeJsonToTag(void *parameter) {
         oledShowIcon("failed");
         vTaskDelay(pdMS_TO_TICKS(2000));
         nfcReaderState = NFC_WRITE_ERROR;
+        
+        // Send error response to API
+        Serial.println("Sending failure result to API via fire-and-forget...");
+        sendRfidResultAsync("", params->spoolId, params->locationId, false, "Write failed");
     }
   }
   else
@@ -1727,13 +1735,22 @@ void writeJsonToTag(void *parameter) {
     oledShowProgressBar(1, 1, "Failure!", "No tag found");
     vTaskDelay(pdMS_TO_TICKS(2000));
     nfcReaderState = NFC_IDLE;
+    
+    // Send timeout response to API
+    Serial.println("Sending timeout result to API via fire-and-forget...");
+    sendRfidResultAsync("", params->spoolId, params->locationId, false, "Timeout - no tag found");
   }
   
   sendWriteResult(nullptr, success);
   sendNfcData();
 
-  // Only reset the write protection flag - reading task was never suspended
+  // Reset write protection and cleanup
   nfcWriteInProgress = false; // Re-enable high-level tag operations
+  
+  // Make sure we are in a safe state
+  if (nfcReaderState == NFC_WRITING) {
+      nfcReaderState = NFC_IDLE;
+  }
 
   free(params->payload);
   delete params;
@@ -1788,29 +1805,52 @@ String optimizeJsonForFastPath(const char* payload) {
     return optimizedJson;
 }
 
-void startWriteJsonToTag(const bool isSpoolTag, const char* payload) {
+void startWriteJsonToTag(const bool isSpoolTag, const char* payload, int spoolId, int locationId) {
+  Serial.printf("startWriteJsonToTag called for spoolId=%d locationId=%d\n", spoolId, locationId);
+
+  // Prevent immediate re-entry before task starts
+  if (nfcWriteInProgress) {
+    Serial.println("startWriteJsonToTag: NFC Busy (nfcWriteInProgress=true)");
+    return;
+  }
+
   // Optimize JSON to ensure sm_id is first key for fast-path detection
   String optimizedPayload = optimizeJsonForFastPath(payload);
   
   NfcWriteParameterType* parameters = new NfcWriteParameterType();
   parameters->tagType = isSpoolTag;
   parameters->payload = strdup(optimizedPayload.c_str()); // Use optimized payload
+  parameters->spoolId = spoolId;
+  parameters->locationId = locationId;
   
   // Task nicht mehrfach starten
   if (nfcReaderState == NFC_IDLE || nfcReaderState == NFC_READ_ERROR || nfcReaderState == NFC_READ_SUCCESS) {
+    nfcWriteInProgress = true; // Lock immediately to prevent race conditions
+    Serial.println("startWriteJsonToTag: Starting task, lock acquired.");
+
     oledShowProgressBar(0, 1, "Write Tag", "Place tag now");
     // Erstelle die Task
-    xTaskCreate(
+    BaseType_t result = xTaskCreatePinnedToCore(
         writeJsonToTag,        // Task-Funktion
         "WriteJsonToTagTask",       // Task-Name
-        5115,                        // Stackgröße in Bytes
+        8192,                        // Stackgröße in Bytes
         (void*)parameters,         // Parameter
         rfidWriteTaskPrio,           // Priorität
-        NULL                         // Task-Handle (nicht benötigt)
+        NULL,                        // Task-Handle (nicht benötigt)
+        1                            // Core 1 (Arduino Core)
     );
+
+    if (result != pdPASS) {
+        Serial.println("Failed to create write task!");
+        nfcWriteInProgress = false; // Release lock if task creation failed
+        free(parameters->payload);
+        delete parameters;
+    }
   }else{
+    Serial.printf("startWriteJsonToTag: State mismatch (State: %d)\n", nfcReaderState);
     oledShowProgressBar(0, 1, "FAILURE", "NFC busy!");
-    // TBD: Add proper error handling (website)
+    free(parameters->payload);
+    delete parameters;
   }
 }
 
@@ -2029,6 +2069,7 @@ void scanRfidTask(void * parameter) {
 }
 
 void startNfc() {
+  nfcRequestMutex = xSemaphoreCreateMutex();
   oledShowProgressBar(5, 7, DISPLAY_BOOT_TEXT, "NFC init");
   nfc.begin();                                           // Beginne Kommunikation mit RFID Leser
 
