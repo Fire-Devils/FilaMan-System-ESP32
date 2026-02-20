@@ -130,8 +130,9 @@ void setupWebserver(AsyncWebServer &server) {
         Serial.println("Web: Request /waage");
         String html = readFile("/waage.html");
         html.replace("{{autoTare}}", autoTare ? "checked" : "");
-        AsyncWebServerResponse *response = request->send(200, "text/html", html);
+        auto response = request->beginResponse(200, "text/html", html);
         response->addHeader("Cache-Control", NO_CACHE);
+        request->send(response);
     });
 
     server.on("/setup", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -139,8 +140,9 @@ void setupWebserver(AsyncWebServer &server) {
         String html = readFile("/setup.html");
         html.replace("{{registered}}", filamanRegistered ? "Registered" : "Not Registered");
         html.replace("{{filamanUrl}}", filamanUrl);
-        AsyncWebServerResponse *response = request->send(200, "text/html", html);
+        auto response = request->beginResponse(200, "text/html", html);
         response->addHeader("Cache-Control", NO_CACHE);
+        request->send(response);
     });
 
     server.on("/wifi", HTTP_GET, [](AsyncWebServerRequest *request){
