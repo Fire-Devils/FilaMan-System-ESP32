@@ -29,9 +29,7 @@ include/README
 lib/README
 test/README
 .aider*
-data/*
-!data/
-!data/.gitkeep
+
 # important
 html/bambu_credentials.json
 html/spoolman_url.json
@@ -39,5 +37,4 @@ _local/*
 website/*
 release.sh
 .github/copilot-instructions.md
-data
 wiki

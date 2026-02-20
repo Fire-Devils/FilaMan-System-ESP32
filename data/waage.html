@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FilaMan - Scale Configuration</title>
+    <link rel="icon" type="image/png" href="/favicon.ico">
+    <link rel="stylesheet" href="style.css">
+    <script>
+        fetch('/api/version')
+            .then(response => response.json())
+            .then(data => {
+                const versionSpan = document.querySelector('.version');
+                if (versionSpan) {
+                    versionSpan.textContent = 'v' + data.version;
+                }
+            })
+            .catch(error => console.error('Error fetching version:', error));
+    </script>
+</head>
+<body>
+    <div class="navbar">
+        <div style="display: flex; align-items: center; gap: 2rem;">
+            <img src="/logo.png" alt="FilaMan Logo" class="logo">
+            <div class="logo-text">
+                <h1>FilaMan<span class="version"></span></h1>
+                <h4>Filament Management Tool</h4>
+            </div>
+        </div>
+        <nav style="display: flex; gap: 1rem;">
+            <a href="/">Start</a>
+            <a href="/waage">Scale</a>
+            <a href="/config">Config</a>
+            <a href="/about">About</a>
+            <a href="/upgrade">Upgrade</a>
+        </nav>
+    </div>
+
+    <div class="content">
+        <h1>Scale Configuration</h1>
+        
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Scale Actions</h5>
+                <button id="calibrateBtn" class="btn btn-primary">Calibrate Scale</button>
+                <button id="tareBtn" class="btn btn-secondary">Tare Scale</button>
+                &nbsp;&nbsp;&nbsp;Enable Auto-TARE <input type="checkbox" id="autoTareCheckbox" onchange="setAutoTare(this.checked);" {{autoTare}}>
+                <div id="statusMessage" class="mt-3"></div>
+            </div>
+        </div>
+
+        <div id="calibrationCard" class="card mt-3" style="display: none;">
+            <div class="card-body">
+                <h5 class="card-title">Calibration Procedure</h5>
+                <p>Please follow these steps:</p>
+                <ol>
+                    <li>Make sure the scale is empty</li>
+                    <li>Have a 500g calibration weight ready</li>
+                    <li>Click on "Start Calibration"</li>
+                    <li>Step 1: Empty the scale</li>
+                    <li>Step 2: Place the 500g weight on the scale</li>
+                    <li>Step 3: Remove weight from Scale</li>
+                </ol>
+                <button id="startCalibrationBtn" class="btn btn-danger">Start Calibration</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        const statusMessage = document.getElementById('statusMessage');
+
+        function connectWebSocket() {
+            ws = new WebSocket(`ws://${window.location.hostname}/ws`);
+            
+            ws.onopen = () => {
+                statusMessage.innerHTML = 'Scale connected';
+                enableButtons(true);
+            };
+
+            ws.onclose = () => {
+                statusMessage.innerHTML = 'Scale connection lost';
+                enableButtons(false);
+                setTimeout(connectWebSocket, 2000);
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'scale') {
+                    if (data.payload === 'success') {
+                        statusMessage.innerHTML = 'Action successful';
+                        statusMessage.className = 'alert alert-success';
+                    } else if (data.payload === 'error') {
+                        statusMessage.innerHTML = 'Error while performing action';
+                        statusMessage.className = 'alert alert-danger';
+                    }
+                }
+            };
+        }
+
+        function enableButtons(enabled) {
+            document.getElementById('calibrateBtn').disabled = !enabled;
+            document.getElementById('tareBtn').disabled = !enabled;
+        }
+
+        document.getElementById('calibrateBtn').addEventListener('click', () => {
+            document.getElementById('calibrationCard').style.display = 'block';
+        });
+
+        document.getElementById('startCalibrationBtn').addEventListener('click', () => {
+            ws.send(JSON.stringify({
+                type: 'scale',
+                payload: 'calibrate'
+            }));
+            document.getElementById('calibrationCard').style.display = 'none';
+        });
+
+        document.getElementById('tareBtn').addEventListener('click', () => {
+            ws.send(JSON.stringify({
+                type: 'scale',
+                payload: 'tare'
+            }));
+        });
+
+        function setAutoTare(enabled) {
+            ws.send(JSON.stringify({
+                type: 'scale',
+                payload: 'setAutoTare',
+                enabled: enabled
+            }));
+        }
+
+        connectWebSocket();
+    </script>
+</body>
+</html>
