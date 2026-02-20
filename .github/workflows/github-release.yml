@@ -119,6 +119,7 @@ jobs:
     - name: Create GitHub Release
       env:
         GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        RELEASE_NOTES: ${{ steps.release_notes.outputs.CHANGES }}
       run: |
         VERSION=${{ steps.get_version.outputs.VERSION }}
         cd .pio/build/esp32dev
@@ -144,7 +145,7 @@ jobs:
         if [ -n "$FILES_TO_UPLOAD" ]; then
           gh release create "v${VERSION}" \
             --title "Release ${VERSION}" \
-            --notes "${{ steps.release_notes.outputs.CHANGES }}" \
+            --notes "$RELEASE_NOTES" \
             $FILES_TO_UPLOAD
         else
           echo "Error: No files found to upload"

@@ -148,6 +148,7 @@ jobs:
         GITEA_API_URL: ${{ steps.gitea_url.outputs.GITEA_API_URL }}
         GITEA_REPO: ${{ steps.gitea_url.outputs.GITEA_REPO }}
         GITEA_OWNER: ${{ steps.gitea_url.outputs.GITEA_OWNER }}
+        CHANGES: ${{ steps.release_notes.outputs.CHANGES }}
       run: |
         # Debug Token (nur Länge ausgeben für Sicherheit)
         echo "Debug: Token length: ${#GITEA_TOKEN}"
@@ -165,7 +166,12 @@ jobs:
         
         # Erstelle zuerst den Release ohne Dateien
         echo "Debug: Creating release..."
-        RELEASE_DATA="{\"tag_name\":\"v${VERSION}\",\"name\":\"v${VERSION}\",\"body\":\"${{ steps.release_notes.outputs.CHANGES }}\"}"
+        # Verwende jq für sicheres JSON-Building
+        RELEASE_DATA=$(jq -n \
+          --arg tag "v${VERSION}" \
+          --arg name "v${VERSION}" \
+          --arg body "$CHANGES" \
+          '{tag_name: $tag, name: $name, body: $body}')
         
         RELEASE_RESPONSE=$(curl -s -w "\n%{http_code}" \
           -X POST \
