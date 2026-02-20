@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FilaMan - Setup</title>
+    <link rel="icon" type="image/png" href="/favicon.ico">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="navbar">
+        <div style="display: flex; align-items: center; gap: 2rem;">
+            <img src="/logo.png" alt="FilaMan Logo" class="logo">
+            <div class="logo-text">
+                <h1>FilaMan</h1>
+                <h4>Filament Management Tool</h4>
+            </div>
+        </div>
+        <nav style="display: flex; gap: 1rem;">
+            <a href="/">Start</a>
+            <a href="/waage">Scale</a>
+            <a href="/setup">Setup</a>
+            <a href="/upgrade">Upgrade</a>
+        </nav>
+    </div>
+
+    <div class="content">
+        <h1>Device Setup</h1>
+        
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Registration</h5>
+                <p>Status: <strong>{{registered}}</strong></p>
+                <div class="form-group">
+                    <label for="filamanUrl">FilaMan API URL:</label>
+                    <input type="text" id="filamanUrl" class="form-control" value="{{filamanUrl}}" placeholder="http://192.168.1.10:8000">
+                </div>
+                <div class="form-group mt-2">
+                    <label for="deviceCode">Registration Code (6 digits):</label>
+                    <input type="text" id="deviceCode" class="form-control" maxlength="6" placeholder="123456">
+                </div>
+                <button id="registerBtn" class="btn btn-primary mt-3">Register Device</button>
+                <div id="statusMessage" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('registerBtn').addEventListener('click', () => {
+            const url = document.getElementById('filamanUrl').value;
+            const code = document.getElementById('deviceCode').value;
+            const statusMessage = document.getElementById('statusMessage');
+
+            if (!url || !code) {
+                statusMessage.innerHTML = 'Please provide both URL and Code';
+                statusMessage.className = 'alert alert-danger';
+                return;
+            }
+
+            statusMessage.innerHTML = 'Registering...';
+            statusMessage.className = 'alert alert-info';
+
+            fetch('/api/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: url, code: code })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    statusMessage.innerHTML = 'Registration successful! Rebooting...';
+                    statusMessage.className = 'alert alert-success';
+                    setTimeout(() => fetch('/reboot'), 2000);
+                } else {
+                    statusMessage.innerHTML = 'Registration failed. Check code and URL.';
+                    statusMessage.className = 'alert alert-danger';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                statusMessage.innerHTML = 'Network error.';
+                statusMessage.className = 'alert alert-danger';
+            });
+        });
+    </script>
+</body>
+</html>
