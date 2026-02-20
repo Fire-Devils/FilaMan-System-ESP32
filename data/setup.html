@@ -6,13 +6,24 @@
     <title>FilaMan - Setup</title>
     <link rel="icon" type="image/png" href="/favicon.ico">
     <link rel="stylesheet" href="style.css">
+    <script>
+        fetch('/api/version')
+            .then(response => response.json())
+            .then(data => {
+                const versionSpan = document.querySelector('.version');
+                if (versionSpan) {
+                    versionSpan.textContent = 'v' + data.version;
+                }
+            })
+            .catch(error => console.error('Error fetching version:', error));
+    </script>
 </head>
 <body>
     <div class="navbar">
         <div style="display: flex; align-items: center; gap: 2rem;">
             <img src="/logo.png" alt="FilaMan Logo" class="logo">
             <div class="logo-text">
-                <h1>FilaMan</h1>
+                <h1>FilaMan<span class="version"></span></h1>
                 <h4>Filament Management Tool</h4>
             </div>
         </div>
@@ -20,8 +31,15 @@
             <a href="/">Start</a>
             <a href="/waage">Scale</a>
             <a href="/setup">Setup</a>
+            <a href="/wifi">WiFi</a>
             <a href="/upgrade">Upgrade</a>
         </nav>
+        <div class="status-container">
+            <div class="status-item">
+                <span class="status-dot" id="filamanDot"></span>F
+            </div>
+            <div class="ram-status" id="ramStatus"></div>
+        </div>
     </div>
 
     <div class="content">
