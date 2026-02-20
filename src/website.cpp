@@ -202,13 +202,13 @@ void setupWebserver(AsyncWebServer &server) {
         JsonDocument doc;
         DeserializationError error = deserializeJson(doc, (const uint8_t*)data, len);
         if (error) {
-            request->send(400, "application/json", "{\"success\": false, \"error\": \"Invalid JSON\"}");
+            request->send(400, "application/json", "{\"error\": \"Invalid JSON\"}");
             return;
         }
         String payloadString;
         serializeJson(doc, payloadString);
-        startWriteJsonToTag(!doc["spool_id"].isNull(), payloadString.c_str());
-        request->send(200, "application/json", "{\"status\": \"writing\"}");
+        // Pass request to NFC task - it will handle the response
+        startWriteJsonToTag(!doc["spool_id"].isNull(), payloadString.c_str(), request);
     });
 
     server.on("/api/version", HTTP_GET, [](AsyncWebServerRequest *request){
