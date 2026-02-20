@@ -162,7 +162,7 @@ void loop() {
     {
       // Use filtered weight for smooth display, but still check API weight for significant changes
       int16_t displayWeight = getFilteredDisplayWeight();
-      if (mainTaskWasPaused || (weight != lastWeight && nfcReaderState == NFC_IDLE))
+      if (mainTaskWasPaused || (weight != lastWeight && (nfcReaderState == NFC_IDLE || tagProcessed)))
       {
         (displayWeight < 2) ? ((displayWeight < -2) ? oledDisplayText("!! -0") : oledShowWeight(0)) : oledShowWeight(displayWeight);
       }
@@ -191,12 +191,6 @@ void loop() {
       }
     }
 
-    // reset weight counter after writing tag
-    if (currentMillis - lastWeightReadTime >= weightReadInterval && nfcReaderState != NFC_IDLE && nfcReaderState != NFC_READ_SUCCESS)
-    {
-      weightCounterToApi = 0;
-    }
-    
     lastWeight = weight;
 
     // Wenn ein Tag erkannt wurde und das Gewicht stabil ist, an FilaMan senden
@@ -211,6 +205,10 @@ void loop() {
       sendWeightAsync(sId, activeTagUuid, weight);
       weightSend = 1;
       Serial.println("Weight queued for FilaMan");
+      
+      // Feedback to user
+      pauseMainTask = 1;
+      oledShowProgressBar(3, 4, "Spool Tag", "Sending...");
     }
 
     // Handle successful tag write
@@ -221,6 +219,10 @@ void loop() {
       sendWeightAsync(sId, activeTagUuid, weight);
       weightSend = 1;
       Serial.println("Weight queued for FilaMan after tag write");
+      
+      // Feedback to user
+      pauseMainTask = 1;
+      oledShowProgressBar(3, 4, "Tag written", "Sending...");
     }
   }
   

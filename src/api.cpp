@@ -105,8 +105,30 @@ bool sendWeight(int spoolId, String tagUuid, float measuredWeight) {
     String payload;
     serializeJson(doc, payload);
     int httpCode = http.POST(payload);
+    
+    if (httpCode == 200) {
+        String response = http.getString();
+        JsonDocument responseDoc;
+        DeserializationError error = deserializeJson(responseDoc, response);
+        if (!error && responseDoc["remaining_weight_g"].is<float>()) {
+            int remaining = (int)responseDoc["remaining_weight_g"].as<float>();
+            pauseMainTask = 1;
+            oledShowRemainingWeight(remaining);
+            vTaskDelay(pdMS_TO_TICKS(3000));
+            pauseMainTask = 0;
+        }
+        http.end();
+        return true;
+    }
+    else {
+        pauseMainTask = 1;
+        oledShowProgressBar(1, 1, "Failure", "API Error");
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        pauseMainTask = 0;
+    }
+    
     http.end();
-    return (httpCode == 200);
+    return false;
 }
 
 bool sendLocation(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid) {

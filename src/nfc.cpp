@@ -2025,6 +2025,7 @@ void scanRfidTask(void * parameter) {
         nfcJsonData = "";
         activeSpoolId = "";
         activeTagUuid = "";
+        tagProcessed = false;
         oledShowWeight(weight);
       }
 
@@ -2032,6 +2033,7 @@ void scanRfidTask(void * parameter) {
       else if (!success && nfcReaderState == NFC_READ_SUCCESS)
       {
         nfcReaderState = NFC_IDLE;
+        tagProcessed = false;
         Serial.println("Tag nach erfolgreichem Lesen entfernt - bereit für nächsten Tag");
       }
 

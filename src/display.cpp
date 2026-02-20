@@ -254,6 +254,19 @@ void oledShowWeight(uint16_t weight) {
     display.display();
 }
 
+void oledShowRemainingWeight(uint16_t remainingWeight) {
+    oledcleardata();
+    display.setTextSize(1);
+    display.setCursor(oled_center_h("Weight sent, rest:"), OLED_DATA_START + 4);
+    display.print("Weight sent, rest:");
+    
+    display.setTextSize(3);
+    String weightStr = String(remainingWeight) + " g";
+    display.setCursor(oled_center_h(weightStr), OLED_DATA_START + 22);
+    display.print(weightStr);
+    display.display();
+}
+
 void oledShowConnectionError(const char* error, const String& ip) {
     oledcleardata();
     display.setTextSize(1);
