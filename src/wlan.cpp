@@ -4,7 +4,6 @@
 #include <esp_wifi.h>
 #include <WiFiManager.h>
 #include <DNSServer.h>
-#include <ESPmDNS.h>
 #include "display.h"
 #include "config.h"
 
@@ -27,17 +26,6 @@ void wifiSettings() {
     
     // Aktiviere WiFi-Roaming für bessere Stabilität
     esp_wifi_set_rssi_threshold(-80);
-}
-
-void startMDNS() {
-  if (!MDNS.begin("filaman")) {
-    Serial.println("Error setting up MDNS responder!");
-    while(1) {
-      vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-  }
-  MDNS.addService("http", "tcp", 80);
-  Serial.println("mDNS responder started");
 }
 
 void configModeCallback (WiFiManager *myWiFiManager) {
@@ -80,9 +68,6 @@ void initWiFi() {
     Serial.println(WiFi.localIP());
 
     oledShowTopRow();
-
-    // mDNS
-    startMDNS();
   }
 }
 
@@ -114,7 +99,6 @@ void checkWiFiConnection() {
       wifiErrorCounter = 0;
       wifiOn = true;
       oledShowTopRow();
-      startMDNS();
     }
   }
 

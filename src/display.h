@@ -20,6 +20,7 @@ void oledShowProgressBar(const uint8_t step, const uint8_t numSteps, const char*
 
 void oledShowWeight(uint16_t weight);
 void oledDisplayText(const String &message, uint8_t size = 2);
+void oledShowConnectionError(const char* error, const String& ip);
 void oledShowTopRow();
 void oledShowIcon(const char* icon);
 

@@ -253,3 +253,19 @@ void oledShowWeight(uint16_t weight) {
     display.print(" g");
     display.display();
 }
+
+void oledShowConnectionError(const char* error, const String& ip) {
+    oledcleardata();
+    display.setTextSize(1);
+    
+    // Error Message
+    display.setCursor(oled_center_h(error), OLED_DATA_START + 4);
+    display.print(error);
+    
+    // IP Address
+    display.setTextSize(1);
+    display.setCursor(oled_center_h(ip), OLED_DATA_START + 24);
+    display.print(ip);
+    
+    display.display();
+}

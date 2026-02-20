@@ -98,9 +98,25 @@ int16_t lastWeight = 0;
 unsigned long lastButtonPress = 0;
 const unsigned long debounceDelay = 500; // 500 ms debounce delay
 
+unsigned long lastConnErrorShowTime = 0;
+const unsigned long connErrorShowInterval = 10000; // Show connection error every 10 seconds if exists
+
 // ##### PROGRAM START #####
 void loop() {
   unsigned long currentMillis = millis();
+
+  // Handle connection errors (not registered or not connected)
+  if (intervalElapsed(currentMillis, lastConnErrorShowTime, connErrorShowInterval)) {
+      if (!filamanRegistered) {
+          oledShowConnectionError("Not Registered", WiFi.localIP().toString());
+          vTaskDelay(pdMS_TO_TICKS(3000));
+          mainTaskWasPaused = true;
+      } else if (!filamanConnected) {
+          oledShowConnectionError("API Connection Lost", WiFi.localIP().toString());
+          vTaskDelay(pdMS_TO_TICKS(3000));
+          mainTaskWasPaused = true;
+      }
+  }
 
   // Überprüfe den Status des Touch Sensors
   if (touchSensorConnected && digitalRead(TTP223_PIN) == HIGH && currentMillis - lastButtonPress > debounceDelay) 
