@@ -13,13 +13,8 @@
 **/.Trashes
 **/.fseventsd
 .AppleDouble
-.aider.chat.history.md
-.aider.input.history
 .DS_Store
 .gitignore
-.aider.tags.cache.v3/cache.db
-.aider.tags.cache.v3/cache.db-shm
-.aider.tags.cache.v3/cache.db-wal
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
@@ -28,7 +23,6 @@
 include/README
 lib/README
 test/README
-.aider*
 
 # important
 html/bambu_credentials.json
@@ -36,5 +30,4 @@ html/spoolman_url.json
 _local/*
 website/*
 release.sh
-.github/copilot-instructions.md
 wiki
