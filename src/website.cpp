@@ -128,16 +128,19 @@ void setupWebserver(AsyncWebServer &server) {
 
     server.on("/waage", HTTP_GET, [](AsyncWebServerRequest *request){
         Serial.println("Web: Request /waage");
-        AsyncWebServerResponse *response = request->beginResponse(LittleFS, "/waage.html", "text/html");
+        String html = readFile("/waage.html");
+        html.replace("{{autoTare}}", autoTare ? "checked" : "");
+        AsyncWebServerResponse *response = request->send(200, "text/html", html);
         response->addHeader("Cache-Control", NO_CACHE);
-        request->send(response);
     });
 
     server.on("/setup", HTTP_GET, [](AsyncWebServerRequest *request){
         Serial.println("Web: Request /setup");
-        AsyncWebServerResponse *response = request->beginResponse(LittleFS, "/setup.html", "text/html");
+        String html = readFile("/setup.html");
+        html.replace("{{registered}}", filamanRegistered ? "Registered" : "Not Registered");
+        html.replace("{{filamanUrl}}", filamanUrl);
+        AsyncWebServerResponse *response = request->send(200, "text/html", html);
         response->addHeader("Cache-Control", NO_CACHE);
-        request->send(response);
     });
 
     server.on("/wifi", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -150,6 +153,12 @@ void setupWebserver(AsyncWebServer &server) {
     server.on("/upgrade", HTTP_GET, [](AsyncWebServerRequest *request) {
         Serial.println("Web: Request /upgrade");
         AsyncWebServerResponse *response = request->beginResponse(LittleFS, "/upgrade.html", "text/html");
+        response->addHeader("Cache-Control", NO_CACHE);
+        request->send(response);
+    });
+
+    server.on("/version.txt", HTTP_GET, [](AsyncWebServerRequest *request){
+        AsyncWebServerResponse *response = request->beginResponse(LittleFS, "/version.txt", "text/plain");
         response->addHeader("Cache-Control", NO_CACHE);
         request->send(response);
     });

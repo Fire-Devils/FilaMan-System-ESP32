@@ -50,6 +50,21 @@ bool loadJsonValue(const char* filename, JsonDocument& doc) {
     return true;
 }
 
+String readFile(const char* filename) {
+    File file = LittleFS.open(filename, "r");
+    if (!file) {
+        Serial.print("Fehler beim Öffnen der Datei: ");
+        Serial.println(filename);
+        return "";
+    }
+    String content = "";
+    while (file.available()) {
+        content += (char)file.read();
+    }
+    file.close();
+    return content;
+}
+
 void initializeFileSystem() {
     if (!LittleFS.begin(true)) {
         Serial.println("LittleFS Mount Failed");
