@@ -158,9 +158,9 @@ jobs:
     - name: Upload Firmware via FTP
       if: success()
       env:
-        FTP_PASSWORD: ${{ vars.FTP_PASSWORD }}
-        FTP_USER: ${{ vars.FTP_USER }}
-        FTP_HOST: ${{ vars.FTP_HOST }}
+        FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        FTP_USER: ${{ secrets.FTP_USER }}
+        FTP_HOST: ${{ secrets.FTP_HOST }}
         VERSION: ${{ steps.get_version.outputs.VERSION }}
       run: |
         echo "Environment variables:"
