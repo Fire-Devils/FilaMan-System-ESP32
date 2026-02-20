@@ -32,6 +32,9 @@ jobs:
     uses: ./.github/workflows/github-release.yml
     secrets:
       RELEASE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+      FTP_USER: ${{ secrets.FTP_USER }}
+      FTP_HOST: ${{ secrets.FTP_HOST }}
 
   gitea-release:
     needs: detect-provider

@@ -6,6 +6,15 @@ on:
       RELEASE_TOKEN:
         description: 'GitHub token for release creation'
         required: true
+      FTP_PASSWORD:
+        description: 'FTP Password'
+        required: false
+      FTP_USER:
+        description: 'FTP User'
+        required: false
+      FTP_HOST:
+        description: 'FTP Host'
+        required: false
 
 permissions:
   contents: write
@@ -163,13 +172,6 @@ jobs:
         FTP_HOST: ${{ secrets.FTP_HOST }}
         VERSION: ${{ steps.get_version.outputs.VERSION }}
       run: |
-        echo "Environment variables:"
-        env | grep -E '^FTP_' | while read -r line; do
-          var_name=$(echo "$line" | cut -d= -f1)
-          var_value=$(echo "$line" | cut -d= -f2-)
-          echo "$var_name is $(if [ -n "$var_value" ]; then echo "set"; else echo "empty"; fi)"
-        done
-        
         cd .pio/build/esp32dev
         if [ -n "$FTP_USER" ] && [ -n "$FTP_PASSWORD" ] && [ -n "$FTP_HOST" ]; then
           echo "All FTP credentials are present, attempting upload..."
