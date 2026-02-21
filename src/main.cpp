@@ -100,22 +100,40 @@ const unsigned long debounceDelay = 500; // 500 ms debounce delay
 
 unsigned long lastConnErrorShowTime = 0;
 const unsigned long connErrorShowInterval = 10000; // Show connection error every 10 seconds if exists
+bool showingConnError = false;
+unsigned long connErrorStartTime = 0;
+const unsigned long connErrorDisplayDuration = 3000;
 
 // ##### PROGRAM START #####
 void loop() {
   unsigned long currentMillis = millis();
 
   // Handle connection errors (not registered or not connected)
-  if (intervalElapsed(currentMillis, lastConnErrorShowTime, connErrorShowInterval)) {
+  if (!showingConnError && intervalElapsed(currentMillis, lastConnErrorShowTime, connErrorShowInterval)) {
       if (!filamanRegistered) {
           oledShowConnectionError("Not Registered", WiFi.localIP().toString());
-          vTaskDelay(pdMS_TO_TICKS(3000));
+          showingConnError = true;
+          connErrorStartTime = currentMillis;
           mainTaskWasPaused = true;
       } else if (!filamanConnected) {
           oledShowConnectionError("API Connection Lost", WiFi.localIP().toString());
-          vTaskDelay(pdMS_TO_TICKS(3000));
+          showingConnError = true;
+          connErrorStartTime = currentMillis;
           mainTaskWasPaused = true;
       }
+  }
+
+  // Clear connection error after duration
+  if (showingConnError && currentMillis - connErrorStartTime >= connErrorDisplayDuration) {
+      showingConnError = false;
+      // Force UI refresh next cycle
+      lastTopRowUpdateTime = 0;
+  }
+
+  // Skip the rest of the loop while showing error to avoid UI overwriting
+  if (showingConnError) {
+      esp_task_wdt_reset();
+      return;
   }
 
   // Überprüfe den Status des Touch Sensors

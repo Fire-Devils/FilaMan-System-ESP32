@@ -12,17 +12,17 @@ bool wm_nonblocking = false;
 uint8_t wifiErrorCounter = 0;
 
 void wifiSettings() {
-    // Optimierte WiFi-Einstellungen
-    WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP
-    WiFi.setSleep(false); // disable sleep mode
+    // Standard WiFi-Einstellungen für höchste Stabilität mit ESPAsyncWebServer
+    WiFi.mode(WIFI_STA); 
     WiFi.setHostname("FilaMan");
-    esp_wifi_set_ps(WIFI_PS_NONE);
     
-    // Maximale Sendeleistung
-    WiFi.setTxPower(WIFI_POWER_19_5dBm); // Set maximum transmit power
+    // Wir lassen das Power Management (Sleep) auf dem ESP-Standard.
+    // Ein erzwungenes Ausschalten führt zu RF-Abstürzen bei vielen asynchronen HTTP-Requests.
+    
+    // Angemessene Sendeleistung (reduziert Hitzeprobleme)
+    WiFi.setTxPower(WIFI_POWER_17dBm); // Set stable transmit power (default is 19.5 which gets hot)
   
-    // Optimiere TCP/IP Stack
-    esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
+    // Wir überlassen die Protokoll-Aushandlung (b/g/n) dem Treiber. Harte Vorgaben crashen unter Last.
     
     // Aktiviere WiFi-Roaming für bessere Stabilität
     esp_wifi_set_rssi_threshold(-80);
@@ -74,37 +74,33 @@ void initWiFi() {
 void checkWiFiConnection() {
   if (WiFi.status() != WL_CONNECTED) 
   {
-    Serial.println("WiFi connection lost. Reconnecting...");
-    wifiOn = false;
-    oledShowTopRow();
-    oledDisplayText("WiFi reconnecting");
-    WiFi.reconnect(); // Versuche, die Verbindung wiederherzustellen
-    vTaskDelay(pdMS_TO_TICKS(5000)); // Warte 5 Sekunden, bevor erneut geprüft wird
-    if (WiFi.status() != WL_CONNECTED) 
-    {
-      Serial.println("Failed to reconnect. Restarting WiFi...");
-      WiFi.disconnect();
-      Serial.println("WiFi disconnected.");
-      vTaskDelay(pdMS_TO_TICKS(1000));
-      wifiErrorCounter++;
+    if (wifiOn) {
+        Serial.println("WiFi connection lost. LwIP is auto-reconnecting...");
+        wifiOn = false;
+        oledShowTopRow();
+        oledDisplayText("WiFi reconnecting");
+    }
+    
+    wifiErrorCounter++;
 
-      //wifiSettings();
-      WiFi.reconnect();
-      Serial.println("WiFi reconnecting...");
-      WiFi.waitForConnectResult();
-    } 
-    else 
+    // Only restart after a significant time of no connection (e.g. 5 minutes)
+    // Assuming WIFI_CHECK_INTERVAL is 60000ms (1 minute), 5 errors = 5 minutes
+    if (wifiErrorCounter >= 5) 
     {
-      Serial.println("WiFi reconnected.");
-      wifiErrorCounter = 0;
-      wifiOn = true;
-      oledShowTopRow();
+      Serial.println("WiFi unable to reconnect for 5 minutes. Restarting...");
+      ESP.restart();
     }
   }
-
-  if (wifiErrorCounter >= 5) 
+  else
   {
-    Serial.println("Too many WiFi errors. Restarting...");
-    ESP.restart();
+    if (!wifiOn) {
+        Serial.println("WiFi reconnected.");
+        wifiErrorCounter = 0;
+        wifiOn = true;
+        oledShowTopRow();
+    } else {
+        // Reset error counter if we are connected (just to be safe)
+        wifiErrorCounter = 0;
+    }
   }
 }
