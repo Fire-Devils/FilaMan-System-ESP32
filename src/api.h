@@ -29,13 +29,13 @@ bool registerDevice(const String& deviceCode);
 void sendHeartbeatAsync();
 void sendWeightAsync(int spoolId, String tagUuid, float weight);
 void sendLocationAsync(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid);
-void sendRfidResultAsync(String tagUuid, int spoolId, int locationId, bool success, String errorMessage);
+void sendRfidResultAsync(String tagUuid, int spoolId, int locationId, bool success, String errorMessage, float remainingWeight = 0);
 
 // Internal blocking functions (used by async task)
 bool sendHeartbeat();
 bool sendWeight(int spoolId, String tagUuid, float weight);
 bool sendLocation(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid);
-bool sendRfidResult(String tagUuid, int spoolId, int locationId, bool success, String errorMessage);
+bool sendRfidResult(String tagUuid, int spoolId, int locationId, bool success, String errorMessage, float remainingWeight = 0);
 
 // Helper functions
 void saveFilamanConfig();

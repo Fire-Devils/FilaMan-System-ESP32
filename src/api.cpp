@@ -21,6 +21,7 @@ struct ApiRequest {
     float val;
     bool bool1; // success
     String str3; // error message
+    float remainingWeight; // remaining weight from rfid-result
     bool active = false;
 };
 
@@ -92,19 +93,28 @@ bool sendHeartbeat() {
 }
 
 bool sendWeight(int spoolId, String tagUuid, float measuredWeight) {
-    if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
+    Serial.printf("sendWeight: sending to API - spoolId=%d, tagUuid=%s, weight=%.1f\n", spoolId, tagUuid.c_str(), measuredWeight);
+    if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) {
+        Serial.println("ERROR: Not registered or WiFi not connected");
+        return false;
+    }
     HTTPClient http;
     http.setTimeout(3000);
     http.begin(filamanUrl + "/api/v1/devices/scale/weight");
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", "Device " + filamanToken);
     JsonDocument doc;
+    // Only add spool_id if it's > 0 (for NTAG tags with spool ID)
+    // For Bambu tags (spoolId == 0), only send tag_uuid
     if (spoolId > 0) doc["spool_id"] = spoolId;
+    // Always add tag_uuid if available (this is what we want for Bambu tags)
     if (tagUuid.length() > 0) doc["tag_uuid"] = tagUuid;
     doc["measured_weight_g"] = measuredWeight;
     String payload;
     serializeJson(doc, payload);
+    Serial.printf("API payload: %s\n", payload.c_str());
     int httpCode = http.POST(payload);
+    Serial.printf("API response code: %d\n", httpCode);
     
     if (httpCode == 200) {
         String response = http.getString();
@@ -150,7 +160,7 @@ bool sendLocation(int spoolId, String spoolTagUuid, int locationId, String locat
     return (httpCode == 200);
 }
 
-bool sendRfidResult(String tagUuid, int spoolId, int locationId, bool success, String errorMessage) {
+bool sendRfidResult(String tagUuid, int spoolId, int locationId, bool success, String errorMessage, float remainingWeight) {
     if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
     HTTPClient http;
     http.setTimeout(5000);
@@ -164,6 +174,7 @@ bool sendRfidResult(String tagUuid, int spoolId, int locationId, bool success, S
     if (spoolId > 0) doc["spool_id"] = spoolId;
     if (locationId > 0) doc["location_id"] = locationId;
     if (errorMessage.length() > 0) doc["error_message"] = errorMessage;
+    if (remainingWeight > 0) doc["remaining_weight_g"] = remainingWeight;
     
     String payload;
     serializeJson(doc, payload);
@@ -195,7 +206,7 @@ void filamanApiTask(void* pvParameters) {
                 case API_REQUEST_HEARTBEAT: sendHeartbeat(); break;
                 case API_REQUEST_WEIGHT: sendWeight(req.id1, req.str1, req.val); break;
                 case API_REQUEST_LOCATE: sendLocation(req.id1, req.str1, req.id2, req.str2); break;
-                case API_REQUEST_RFID_RESULT: sendRfidResult(req.str1, req.id1, req.id2, req.bool1, req.str3); break;
+                case API_REQUEST_RFID_RESULT: sendRfidResult(req.str1, req.id1, req.id2, req.bool1, req.str3, req.remainingWeight); break;
                 default: break;
             }
             filamanApiState = API_IDLE;
@@ -227,7 +238,15 @@ void sendHeartbeatAsync() {
 }
 
 void sendWeightAsync(int spoolId, String tagUuid, float weight) {
-    if (!checkFilamanRegistration()) return;
+    Serial.printf("sendWeightAsync: spoolId=%d, tagUuid=%s, weight=%.1f\n", spoolId, tagUuid.c_str(), weight);
+    if (!checkFilamanRegistration()) {
+        Serial.println("ERROR: Not registered with FilaMan, cannot send weight");
+        return;
+    }
+    if (weight <= 0) {
+        Serial.println("ERROR: Weight is 0 or negative, cannot send");
+        return;
+    }
     if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         for(int i=0; i<MAX_API_QUEUE; i++) if(!apiQueue[i].active) {
             apiQueue[i].type = API_REQUEST_WEIGHT;
@@ -237,6 +256,7 @@ void sendWeightAsync(int spoolId, String tagUuid, float weight) {
             apiQueue[i].str2 = "";
             apiQueue[i].val = weight;
             apiQueue[i].active = true;
+            Serial.printf("Weight queued for API (slot %d)\n", i);
             break;
         }
         xSemaphoreGive(queueMutex);
@@ -260,7 +280,7 @@ void sendLocationAsync(int spoolId, String spoolTagUuid, int locationId, String 
     }
 }
 
-void sendRfidResultAsync(String tagUuid, int spoolId, int locationId, bool success, String errorMessage) {
+void sendRfidResultAsync(String tagUuid, int spoolId, int locationId, bool success, String errorMessage, float remainingWeight) {
     if (!checkFilamanRegistration()) return;
     if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         for(int i=0; i<MAX_API_QUEUE; i++) if(!apiQueue[i].active) {
@@ -270,6 +290,7 @@ void sendRfidResultAsync(String tagUuid, int spoolId, int locationId, bool succe
             apiQueue[i].id2 = locationId;
             apiQueue[i].bool1 = success;
             apiQueue[i].str3 = errorMessage;
+            apiQueue[i].remainingWeight = remainingWeight;
             apiQueue[i].active = true;
             break;
         }

@@ -22,6 +22,7 @@ String activeTagUuid = "";
 String lastSpoolId = "";
 String nfcJsonData = "";
 bool tagProcessed = false;
+bool isBambuTag = false;
 volatile bool nfcReadingTaskSuspendRequest = false;
 volatile bool nfcReadingTaskSuspendState = false;
 volatile bool nfcWriteInProgress = false; // Prevent any tag operations during write
@@ -35,6 +36,41 @@ volatile nfcReaderStateType nfcReaderState = NFC_IDLE;
 // 5 = erfolgreich geschrieben
 // 6 = reading
 // ***** PN532
+
+// ##### Bambu Tag Helper Functions #####
+// Simplified: only read UID, no decryption needed (UID is always visible)
+bool detectBambuTag(const uint8_t* uid, uint8_t uidLength) {
+    Serial.println("Detected Bambu Lab tag (Mifare Classic) - reading UID only");
+    
+    // Create UID string with separators (same format as NTAG)
+    String uidString = "";
+    for (uint8_t i = 0; i < uidLength; i++) {
+        uidString += String(uid[i], HEX);
+        if (i < uidLength - 1) {
+            uidString += ":";
+        }
+    }
+    uidString.toUpperCase();
+    
+    Serial.print("  UID: ");
+    Serial.println(uidString);
+    
+    isBambuTag = true;
+    activeTagUuid = uidString;
+    activeSpoolId = ""; // Will be resolved by FilaMan API based on tag UID
+    
+    // Create minimal JSON for compatibility
+    JsonDocument doc;
+    doc["vendor"] = "Bambu Lab";
+    doc["type"] = "Bambu";
+    nfcJsonData = "";
+    serializeJson(doc, nfcJsonData);
+    
+    // Set normal read success state - isBambuTag flag is set for later use
+    nfcReaderState = NFC_READ_SUCCESS;
+    
+    return true;
+}
 
 // ##### Funktionen für RFID #####
 void payloadToJson(uint8_t *data) {
@@ -1590,11 +1626,11 @@ void writeJsonToTag(void *parameter) {
   // Wait up to 30 seconds for tag
   uint8_t success = 0;
   String uidString = "";
+  uint8_t uidLength = 0;
   unsigned long startTime = millis();
   
   while (millis() - startTime < 30000) {
     uint8_t uid[] = { 0, 0, 0, 0, 0, 0, 0 };  // Buffer to store the returned UID
-    uint8_t uidLength;
     // yield before potentially waiting for 400ms
     yield();
     esp_task_wdt_reset();
@@ -1608,7 +1644,7 @@ void writeJsonToTag(void *parameter) {
             uidString += ":"; // Trennzeichen hinzufügen
         }
       }
-      foundNfcTag(nullptr, success);
+      uidString.toUpperCase();
       break;
     }
 
@@ -1619,6 +1655,25 @@ void writeJsonToTag(void *parameter) {
 
   if (success)
   {
+    // Check if this is a Bambu tag (Mifare Classic has 4 byte UID, NTAG has 7 byte)
+    // If so, skip writing and just send success with weight to API
+    if (uidLength != 7) {
+        Serial.println("Bambu Lab tag detected during write - skipping write, sending result with weight");
+        oledShowProgressBar(1, 1, "Write Tag", "Done!");
+        
+        // Send success to API with tag_uuid and current weight
+        sendRfidResultAsync(uidString, params->spoolId, params->locationId, true, "", weight);
+        
+        vTaskDelay(pdMS_TO_TICKS(500));
+        
+        // Clean up and exit
+        nfcWriteInProgress = false;
+        nfcReaderState = NFC_IDLE;
+        free(params->payload);
+        delete params;
+        vTaskDelete(NULL);
+    }
+    
     oledShowProgressBar(1, 3, "Write Tag", "Writing");
 
     // Schreibe die NDEF-Message auf den Tag
@@ -1710,9 +1765,9 @@ void writeJsonToTag(void *parameter) {
         
         Serial.println("=========================================");
         
-        // Send success response to API with tag_uuid (with separators)
+        // Send success response to API with tag_uuid and current weight
         Serial.println("Sending result to API via fire-and-forget...");
-        sendRfidResultAsync(uidString, params->spoolId, params->locationId, true, "");
+        sendRfidResultAsync(uidString, params->spoolId, params->locationId, true, "", weight);
         
         // vTaskResume(RfidReaderTask); // Don't resume as it was not suspended
         vTaskDelay(pdMS_TO_TICKS(500));        
@@ -1740,9 +1795,6 @@ void writeJsonToTag(void *parameter) {
     Serial.println("Sending timeout result to API via fire-and-forget...");
     sendRfidResultAsync("", params->spoolId, params->locationId, false, "Timeout - no tag found");
   }
-  
-  sendWriteResult(nullptr, success);
-  sendNfcData();
 
   // Reset write protection and cleanup
   nfcWriteInProgress = false; // Re-enable high-level tag operations
@@ -2000,21 +2052,28 @@ void scanRfidTask(void * parameter) {
           }
           else
           {
-            oledShowProgressBar(1, 1, "Failure", "Tag read error");
-            nfcReaderState = NFC_READ_ERROR;
-            // Reset activeSpoolId when tag reading fails to prevent autoSet
-            activeSpoolId = "";
-            Serial.println("Tag read failed - activeSpoolId reset to prevent autoSet");
+            // NTAG reading failed, try reading as Bambu Lab tag
+            Serial.println("NTAG read failed, trying Bambu Lab tag...");
+            if (!detectBambuTag(uid, uidLength)) {
+                oledShowProgressBar(1, 1, "Failure", "Tag read error");
+                nfcReaderState = NFC_READ_ERROR;
+                activeSpoolId = "";
+                Serial.println("Tag read failed - activeSpoolId reset to prevent autoSet");
+            }
           }
         }
         else
         {
-          //TBD: Show error here?!
-          oledShowProgressBar(1, 1, "Failure", "Unkown tag type");
-          Serial.println("This doesn't seem to be an NTAG2xx tag (UUID length != 7 bytes)!");
-          // Reset activeSpoolId when tag type is unknown to prevent autoSet
-          activeSpoolId = "";
-          Serial.println("Unknown tag type - activeSpoolId reset to prevent autoSet");
+          // UID length != 7, might be a Mifare Classic (Bambu tags)
+          Serial.println("Not a standard NTAG (UID length != 7), trying Bambu Lab tag...");
+          if (!detectBambuTag(uid, uidLength)) {
+            //TBD: Show error here?!
+            oledShowProgressBar(1, 1, "Failure", "Unkown tag type");
+            Serial.println("This doesn't seem to be an NTAG2xx tag (UUID length != 7 bytes)!");
+            // Reset activeSpoolId when tag type is unknown to prevent autoSet
+            activeSpoolId = "";
+            Serial.println("Unknown tag type - activeSpoolId reset to prevent autoSet");
+          }
         }
       }
 
@@ -2034,6 +2093,7 @@ void scanRfidTask(void * parameter) {
       {
         nfcReaderState = NFC_IDLE;
         tagProcessed = false;
+        isBambuTag = false;
         Serial.println("Tag nach erfolgreichem Lesen entfernt - bereit für nächsten Tag");
       }
 

@@ -27,8 +27,7 @@ test/README
 # important
 html/bambu_credentials.json
 html/spoolman_url.json
-_local/*
 website/*
 release.sh
 wiki
-_layout
+_*
