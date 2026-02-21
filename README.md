@@ -4,7 +4,7 @@
 
 FilaMan is a filament management tool for 3D printing. It uses ESP32 hardware for weight measurement and NFC tag management. 
 Users can manage filament spools and configure the device via a web interface. 
-The system integrates seamlessly with the [FilaMan-System](https://github.com/Fire-Devils/filaman-system) and supports the [Openspool](https://github.com/spuder/OpenSpool) NFC-TAG format.
+The system integrates seamlessly with the [FilaMan-System](https://github.com/Fire-Devils/filaman-system).
 
 
 ![Scale](./img/scale_trans.png)
@@ -47,7 +47,6 @@ More information and products can be found here: [www.recyclingfabrik.com](https
 - **Real-time Updates:** WebSocket connection for live data updates.
 - **NFC Tag Management:** 
 	- Write filament data to NFC tags.
-	- Uses NFC-Tag Format of [Openspool](https://github.com/spuder/OpenSpool).
 	- Supports automatic Spool detection in compatible systems.
 - **FilaMan-System Integration:**
   - Synchronize spool data with the central backend.
