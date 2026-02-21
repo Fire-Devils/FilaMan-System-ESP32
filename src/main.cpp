@@ -233,14 +233,21 @@ void loop() {
     if (nfcReaderState == NFC_WRITE_SUCCESS && tagProcessed == false) 
     {
       tagProcessed = true;
-      int sId = activeSpoolId.toInt();
-      sendWeightAsync(sId, activeTagUuid, weight);
-      weightSend = 1;
-      Serial.println("Weight queued for FilaMan after tag write");
       
-      // Feedback to user
-      pauseMainTask = 1;
-      oledShowProgressBar(3, 4, "Tag written", "Sending...");
+      // Only send weight if a valid spoolId exists (spool tag, not location tag)
+      if (activeSpoolId.length() > 0 && activeSpoolId != "0") {
+        int sId = activeSpoolId.toInt();
+        sendWeightAsync(sId, activeTagUuid, weight);
+        weightSend = 1;
+        Serial.println("Weight queued for FilaMan after spool tag write");
+        
+        // Feedback to user
+        pauseMainTask = 1;
+        oledShowProgressBar(3, 4, "Tag written", "Sending...");
+      } else {
+        // Location tag written - no weight to send
+        Serial.println("Location tag written successfully - no weight send needed");
+      }
     }
   }
   
