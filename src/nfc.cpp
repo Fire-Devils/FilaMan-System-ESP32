@@ -2099,13 +2099,12 @@ void scanRfidTask(void * parameter) {
 
       // Add a pause after successful reading to prevent immediate re-reading
       if (nfcReaderState == NFC_READ_SUCCESS) {
-        Serial.println("Tag erfolgreich gelesen - warte 3 Sekunden vor nächstem Scan");
-            vTaskDelay(pdMS_TO_TICKS(3000)); 
- // Reduced from 5 seconds to 3 seconds
+        // After tag is processed, slow down scanning to give API time
+        Serial.println("Tag processed - slowing scan to 2 seconds");
+        vTaskDelay(pdMS_TO_TICKS(2000)); 
       } else {
         // Faster scanning when no tag or idle state
-                vTaskDelay(pdMS_TO_TICKS(250)); 
- // Faster scan interval
+        vTaskDelay(pdMS_TO_TICKS(500)); 
       }
 
       // aktualisieren der Website wenn sich der Status ändert

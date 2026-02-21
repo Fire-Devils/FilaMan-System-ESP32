@@ -211,7 +211,7 @@ void filamanApiTask(void* pvParameters) {
             }
             filamanApiState = API_IDLE;
         }
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 

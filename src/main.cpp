@@ -212,7 +212,7 @@ void loop() {
     lastWeight = weight;
 
     // Wenn ein Tag erkannt wurde und das Gewicht stabil ist, an FilaMan senden
-    if (weightCounterToApi > 3 && weightSend == 0 && nfcReaderState == NFC_READ_SUCCESS && tagProcessed == false) 
+    if (weightCounterToApi > 1 && weightSend == 0 && nfcReaderState == NFC_READ_SUCCESS && tagProcessed == false) 
     {
       tagProcessed = true;
       
