@@ -11,7 +11,9 @@ typedef enum{
     NFC_READ_ERROR,
     NFC_WRITING,
     NFC_WRITE_SUCCESS,
-    NFC_WRITE_ERROR
+    NFC_WRITE_ERROR,
+    NFC_BAMBU_DETECTED,
+    NFC_BAMBU_ERROR
 } nfcReaderStateType;
 
 struct NfcWriteParameterType {
@@ -35,7 +37,6 @@ extern String lastSpoolId;
 extern volatile nfcReaderStateType nfcReaderState;
 extern volatile bool nfcWriteInProgress;
 extern bool tagProcessed;
-
-
+extern bool isBambuTag;
 
 #endif

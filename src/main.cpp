@@ -212,17 +212,21 @@ void loop() {
     lastWeight = weight;
 
     // Wenn ein Tag erkannt wurde und das Gewicht stabil ist, an FilaMan senden
-    if (weightCounterToApi > 3 && weightSend == 0 && nfcReaderState == NFC_READ_SUCCESS && tagProcessed == false) 
+    if (weightCounterToApi > 1 && weightSend == 0 && nfcReaderState == NFC_READ_SUCCESS && tagProcessed == false) 
     {
-      // set the current tag as processed to prevent it beeing processed again
       tagProcessed = true;
       
-      // Get UID from nfcJsonData or similar (nfc.cpp should set it)
-      // For now, use activeSpoolId if available
-      int sId = activeSpoolId.toInt();
-      sendWeightAsync(sId, activeTagUuid, weight);
+      // Check if it's a Bambu tag - if so, send only UUID without spoolId
+      if (isBambuTag) {
+        sendWeightAsync(0, activeTagUuid, weight);
+        Serial.println("Bambu weight queued for FilaMan (UUID only)");
+      } else {
+        // Normal NTAG: send spoolId + UUID
+        int sId = activeSpoolId.toInt();
+        sendWeightAsync(sId, activeTagUuid, weight);
+        Serial.println("Weight queued for FilaMan");
+      }
       weightSend = 1;
-      Serial.println("Weight queued for FilaMan");
       
       // Feedback to user
       pauseMainTask = 1;
@@ -233,14 +237,21 @@ void loop() {
     if (nfcReaderState == NFC_WRITE_SUCCESS && tagProcessed == false) 
     {
       tagProcessed = true;
-      int sId = activeSpoolId.toInt();
-      sendWeightAsync(sId, activeTagUuid, weight);
-      weightSend = 1;
-      Serial.println("Weight queued for FilaMan after tag write");
       
-      // Feedback to user
-      pauseMainTask = 1;
-      oledShowProgressBar(3, 4, "Tag written", "Sending...");
+      // Only send weight if a valid spoolId exists (spool tag, not location tag)
+      if (activeSpoolId.length() > 0 && activeSpoolId != "0") {
+        int sId = activeSpoolId.toInt();
+        sendWeightAsync(sId, activeTagUuid, weight);
+        weightSend = 1;
+        Serial.println("Weight queued for FilaMan after spool tag write");
+        
+        // Feedback to user
+        pauseMainTask = 1;
+        oledShowProgressBar(3, 4, "Tag written", "Sending...");
+      } else {
+        // Location tag written - no weight to send
+        Serial.println("Location tag written successfully - no weight send needed");
+      }
     }
   }
   
