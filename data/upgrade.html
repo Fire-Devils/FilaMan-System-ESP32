@@ -3,85 +3,94 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FilaMan - Filament Management Tool</title>
+    <title>FilaMan - Firmware Upgrade</title>
     <link rel="icon" type="image/png" href="/favicon.ico">
     <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="fm-page">
+        <aside class="fm-sidebar">
+            <div class="sidebar-brand">
+                <img src="/logo.png" alt="Logo" class="sidebar-logo">
+                <div class="brand-text">
+                    <h1>FilaMan <span class="version"></span></h1>
+                </div>
+            </div>
+            <nav class="fm-nav">
+                <a href="/">Start</a>
+                <a href="/waage">Scale</a>
+                <a href="/setup">Setup</a>
+                <a href="/upgrade" class="active">Upgrade</a>
+            </nav>
+            <div class="sidebar-status">
+                <div class="status-item">
+                    <span class="status-dot" id="filamanDot"></span>
+                    <span>System Sync</span>
+                </div>
+                <div class="status-item">
+                    <span id="ramStatus"></span>
+                </div>
+            </div>
+        </aside>
+
+        <main class="fm-main">
+            <header>
+                <h1>Firmware Upgrade</h1>
+                <p>Keep your device up to date with the latest features and security improvements.</p>
+            </header>
+
+            <div class="fm-card" style="border-color: var(--accent-3);">
+                <h3 style="color: var(--accent-3);">Important Warning</h3>
+                <p>Do <strong>not</strong> power off the device during the update process. A failed update may require manual recovery.</p>
+            </div>
+
+            <div class="features-grid">
+                <div class="fm-card">
+                    <h2>Firmware Update</h2>
+                    <p>Upload a new binary firmware file.</p>
+                    <form id="firmwareForm" enctype='multipart/form-data' data-type="firmware">
+                        <div class="fm-form-group">
+                            <input type='file' name='update' accept='.bin' required class="fm-input">
+                        </div>
+                        <input type='submit' value='Start Update' class="fm-btn fm-btn-primary" style="width: 100%;">
+                    </form>
+                </div>
+
+                <div class="fm-card">
+                    <h2>Webpage Update</h2>
+                    <p>Update the internal web interface assets.</p>
+                    <form id="webpageForm" enctype='multipart/form-data' data-type="webpage">
+                        <div class="fm-form-group">
+                            <input type='file' name='update' accept='.bin' required class="fm-input">
+                        </div>
+                        <input type='submit' value='Start Update' class="fm-btn fm-btn-outline" style="width: 100%;">
+                    </form>
+                </div>
+            </div>
+
+            <div id="progressContainer" class="fm-card" style="display: none; margin-top: 2rem;">
+                <h3 id="updateStatus">Update in progress...</h3>
+                <div style="width: 100%; background: var(--bg); height: 24px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); margin: 1rem 0;">
+                    <div id="progressBar" style="width: 0%; height: 100%; background: var(--accent); transition: width 0.3s ease;"></div>
+                </div>
+                <p id="detailedStatus" style="font-size: 0.85rem;"></p>
+            </div>
+        </main>
+    </div>
+
     <script>
+        // Fetch Version
         fetch('/api/version')
             .then(response => response.json())
             .then(data => {
                 const versionSpan = document.querySelector('.version');
-                if (versionSpan) {
-                    versionSpan.textContent = 'v' + data.version;
-                }
+                if (versionSpan) versionSpan.textContent = 'v' + data.version;
             })
             .catch(error => console.error('Error fetching version:', error));
-    </script>
-</head>
-<body>
-    <div class="navbar">
-        <div style="display: flex; align-items: center; gap: 2rem;">
-            <img src="/logo.png" alt="FilaMan Logo" class="logo">
-            <div class="logo-text">
-                <h1>FilaMan<span class="version"></span></h1>
-                <h4>Filament Management Tool</h4>
-            </div>
-        </div>
-        <nav style="display: flex; gap: 1rem;">
-            <a href="/">Start</a>
-            <a href="/waage">Scale</a>
-            <a href="/setup">Setup</a>
-            <a href="/upgrade">Upgrade</a>
-        </nav>
-        <div class="status-container">
-            <div class="status-item">
-                <span class="status-dot" id="filamanDot"></span>F
-            </div>
-            <div class="ram-status" id="ramStatus"></div>
-        </div>
-    </div>
 
-    <div class="content">
-        <h1>Firmware Upgrade</h1>
-
-        <div class="warning">
-            <strong>Warning:</strong> Do not power off the device during update.
-        </div>
-
-        <div class="update-options">
-            <div class="update-section">
-                <h2>1) Firmware Update</h2>
-                <p>Upload a new firmware file (upgrade_filaman_firmware_*.bin)</p>
-                <div class="update-form">
-                    <form id="firmwareForm" enctype='multipart/form-data' data-type="firmware">
-                        <input type='file' name='update' accept='.bin' required>
-                        <input type='submit' value='Start Firmware Update' class="btn btn-primary">
-                    </form>
-                </div>
-            </div>
-
-            <div class="update-section">
-                <h2>2) Webpage Update</h2>
-                <p>Upload a new webpage file (upgrade_filaman_website_*.bin)</p>
-                <div class="update-form">
-                    <form id="webpageForm" enctype='multipart/form-data' data-type="webpage">
-                        <input type='file' name='update' accept='.bin' required>
-                        <input type='submit' value='Start Webpage Update' class="btn btn-primary">
-                    </form>
-                </div>
-            </div>
-        </div>
-
-        <div class="progress-container" style="display: none;">
-            <div class="progress-bar">0%</div>
-        </div>
-        <div class="status"></div>
-    </div>
-
-    <script>
-        const progress = document.querySelector('.progress-bar');
-        const progressContainer = document.querySelector('.progress-container');
-        const status = document.querySelector('.status');
+        const progress = document.getElementById('progressBar');
+        const progressContainer = document.getElementById('progressContainer');
+        const status = document.getElementById('detailedStatus');
         let updateInProgress = false;
         let lastReceivedProgress = 0;
 
@@ -92,7 +101,8 @@
             ws.onmessage = function(event) {
                 const data = JSON.parse(event.data);
                 if (data.type === "heartbeat") {
-                    document.getElementById('filamanDot').style.backgroundColor = data.filaman_connected ? '#4caf50' : '#f44336';
+                    const dot = document.getElementById('filamanDot');
+                    dot.className = data.filaman_connected ? 'status-dot online' : 'status-dot offline';
                     document.getElementById('ramStatus').textContent = data.freeHeap + ' KB free';
                 }
                 if (data.type === "updateProgress" && updateInProgress) {
@@ -100,12 +110,10 @@
                     const newProgress = parseInt(data.progress);
                     if (!isNaN(newProgress) && newProgress >= lastReceivedProgress) {
                         progress.style.width = newProgress + '%';
-                        progress.textContent = newProgress + '%';
                         lastReceivedProgress = newProgress;
                     }
                     if (data.message) {
                         status.textContent = data.message;
-                        status.style.display = 'block';
                     }
                 }
             };
@@ -117,25 +125,23 @@
             e.preventDefault();
             const form = e.target;
             const file = form.update.files[0];
-            const updateType = form.dataset.type;
             
             if (!file) return;
             
             updateInProgress = true;
             progressContainer.style.display = 'block';
-            status.style.display = 'none';
             progress.style.width = '0%';
             
-            document.querySelectorAll('form input[type=submit]').forEach(btn => btn.disabled = true);
+            document.querySelectorAll('input[type=submit]').forEach(btn => btn.disabled = true);
 
             const xhr = new XMLHttpRequest();
             xhr.open('POST', '/update', true);
             xhr.onload = function() {
                 if (xhr.status !== 200) {
                     status.textContent = "Update failed: " + xhr.responseText;
-                    status.style.display = 'block';
+                    status.style.color = 'var(--error-text)';
                     updateInProgress = false;
-                    document.querySelectorAll('form input[type=submit]').forEach(btn => btn.disabled = false);
+                    document.querySelectorAll('input[type=submit]').forEach(btn => btn.disabled = false);
                 }
             };
             

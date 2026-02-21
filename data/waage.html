@@ -6,72 +6,79 @@
     <title>FilaMan - Scale Configuration</title>
     <link rel="icon" type="image/png" href="/favicon.ico">
     <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="fm-page">
+        <aside class="fm-sidebar">
+            <div class="sidebar-brand">
+                <img src="/logo.png" alt="Logo" class="sidebar-logo">
+                <div class="brand-text">
+                    <h1>FilaMan <span class="version"></span></h1>
+                </div>
+            </div>
+            <nav class="fm-nav">
+                <a href="/">Start</a>
+                <a href="/waage" class="active">Scale</a>
+                <a href="/setup">Setup</a>
+                <a href="/upgrade">Upgrade</a>
+            </nav>
+            <div class="sidebar-status">
+                <div class="status-item">
+                    <span class="status-dot" id="filamanDot"></span>
+                    <span>System Sync</span>
+                </div>
+                <div class="status-item">
+                    <span id="ramStatus"></span>
+                </div>
+            </div>
+        </aside>
+
+        <main class="fm-main">
+            <header>
+                <h1>Scale Configuration</h1>
+                <p>Manage and calibrate your built-in scale for precise filament weighing.</p>
+            </header>
+
+            <div class="fm-card">
+                <h2>Scale Actions</h2>
+                <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                    <button id="calibrateBtn" class="fm-btn fm-btn-primary">Calibrate Scale</button>
+                    <button id="tareBtn" class="fm-btn fm-btn-outline">Tare Scale</button>
+                    
+                    <label class="status-pill" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <input type="checkbox" id="autoTareCheckbox" onchange="setAutoTare(this.checked);" {{autoTare}}>
+                        <span>Enable Auto-TARE</span>
+                    </label>
+                </div>
+                <div id="statusMessage" style="margin-top: 1.5rem; color: var(--accent);"></div>
+            </div>
+
+            <div id="calibrationCard" class="fm-card" style="display: none; border-color: var(--error-text);">
+                <h2>Calibration Procedure</h2>
+                <p>Follow these steps carefully to ensure accuracy:</p>
+                <ol style="margin-left: 1.5rem; margin-bottom: 1.5rem; color: var(--text-muted);">
+                    <li>Ensure the scale is completely empty.</li>
+                    <li>Prepare a 500g calibration weight.</li>
+                    <li>Click "Start Calibration" below.</li>
+                    <li>Step 1: Wait for zero-point reading.</li>
+                    <li>Step 2: Place the 500g weight on the scale when prompted.</li>
+                    <li>Step 3: Remove the weight.</li>
+                </ol>
+                <button id="startCalibrationBtn" class="fm-btn fm-btn-danger">Start Calibration</button>
+            </div>
+        </main>
+    </div>
+
     <script>
+        // Fetch Version
         fetch('/api/version')
             .then(response => response.json())
             .then(data => {
                 const versionSpan = document.querySelector('.version');
-                if (versionSpan) {
-                    versionSpan.textContent = 'v' + data.version;
-                }
+                if (versionSpan) versionSpan.textContent = 'v' + data.version;
             })
             .catch(error => console.error('Error fetching version:', error));
-    </script>
-</head>
-<body>
-    <div class="navbar">
-        <div style="display: flex; align-items: center; gap: 2rem;">
-            <img src="/logo.png" alt="FilaMan Logo" class="logo">
-            <div class="logo-text">
-                <h1>FilaMan<span class="version"></span></h1>
-                <h4>Filament Management Tool</h4>
-            </div>
-        </div>
-        <nav style="display: flex; gap: 1rem;">
-            <a href="/">Start</a>
-            <a href="/waage">Scale</a>
-            <a href="/setup">Setup</a>
-            <a href="/upgrade">Upgrade</a>
-        </nav>
-        <div class="status-container">
-            <div class="status-item">
-                <span class="status-dot" id="filamanDot"></span>F
-            </div>
-            <div class="ram-status" id="ramStatus"></div>
-        </div>
-    </div>
 
-    <div class="content">
-        <h1>Scale Configuration</h1>
-        
-        <div class="card">
-            <div class="card-body">
-                <h5 class="card-title">Scale Actions</h5>
-                <button id="calibrateBtn" class="btn btn-primary">Calibrate Scale</button>
-                <button id="tareBtn" class="btn btn-secondary">Tare Scale</button>
-                &nbsp;&nbsp;&nbsp;Enable Auto-TARE <input type="checkbox" id="autoTareCheckbox" onchange="setAutoTare(this.checked);" {{autoTare}}>
-                <div id="statusMessage" class="mt-3"></div>
-            </div>
-        </div>
-
-        <div id="calibrationCard" class="card mt-3" style="display: none;">
-            <div class="card-body">
-                <h5 class="card-title">Calibration Procedure</h5>
-                <p>Please follow these steps:</p>
-                <ol>
-                    <li>Make sure the scale is empty</li>
-                    <li>Have a 500g calibration weight ready</li>
-                    <li>Click on "Start Calibration"</li>
-                    <li>Step 1: Empty the scale</li>
-                    <li>Step 2: Place the 500g weight on the scale</li>
-                    <li>Step 3: Remove weight from Scale</li>
-                </ol>
-                <button id="startCalibrationBtn" class="btn btn-danger">Start Calibration</button>
-            </div>
-        </div>
-    </div>
-
-    <script>
         let ws = null;
         const statusMessage = document.getElementById('statusMessage');
 
@@ -79,25 +86,30 @@
             ws = new WebSocket(`ws://${window.location.hostname}/ws`);
             
             ws.onopen = () => {
-                statusMessage.innerHTML = 'Scale connected';
+                statusMessage.textContent = 'Scale connected via WebSocket';
                 enableButtons(true);
             };
 
             ws.onclose = () => {
-                statusMessage.innerHTML = 'Scale connection lost';
+                statusMessage.textContent = 'Scale connection lost. Reconnecting...';
                 enableButtons(false);
                 setTimeout(connectWebSocket, 2000);
             };
 
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
+                if (data.type === 'heartbeat') {
+                    const dot = document.getElementById('filamanDot');
+                    dot.className = data.filaman_connected ? 'status-dot online' : 'status-dot offline';
+                    document.getElementById('ramStatus').textContent = data.freeHeap + ' KB free';
+                }
                 if (data.type === 'scale') {
                     if (data.payload === 'success') {
-                        statusMessage.innerHTML = 'Action successful';
-                        statusMessage.className = 'alert alert-success';
+                        statusMessage.textContent = 'Action successful';
+                        statusMessage.style.color = 'var(--success-text)';
                     } else if (data.payload === 'error') {
-                        statusMessage.innerHTML = 'Error while performing action';
-                        statusMessage.className = 'alert alert-danger';
+                        statusMessage.textContent = 'Error while performing action';
+                        statusMessage.style.color = 'var(--error-text)';
                     }
                 }
             };
@@ -136,6 +148,7 @@
         }
 
         connectWebSocket();
+        setInterval(() => { if(ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type:'heartbeat'})); }, 5000);
     </script>
 </body>
 </html>
