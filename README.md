@@ -1,10 +1,10 @@
 # FilaMan - Filament Management System
 
-[Deutsche Version](README.de.md)
+⚠️ **Important: Starting with v3.0.0, this system requires the [FilaMan-System](https://github.com/Fire-Devils/filaman-system) backend. Previous direct integrations (Spoolman, MQTT, Bambu Lab) have been moved to the central FilaMan-System.**
 
-FilaMan is a filament management system for 3D printing. It uses ESP32 hardware for weight measurement and NFC tag management. 
-Users can manage filament spools, monitor the status of the Automatic Material System (AMS) and make settings via a web interface. 
-The system integrates seamlessly with [Bambulab](https://bambulab.com/en-us) 3D printers and [Spoolman](https://github.com/Donkie/Spoolman) filament management as well as the [Openspool](https://github.com/spuder/OpenSpool) NFC-TAG format.
+FilaMan is a filament management tool for 3D printing. It uses ESP32 hardware for weight measurement and NFC tag management. 
+Users can manage filament spools and configure the device via a web interface. 
+The system integrates seamlessly with the [FilaMan-System](https://github.com/Fire-Devils/filaman-system) and supports the [Openspool](https://github.com/spuder/OpenSpool) NFC-TAG format.
 
 
 ![Scale](./img/scale_trans.png)
@@ -23,7 +23,7 @@ Discord Server: [https://discord.gg/my7Gvaxj2v](https://discord.gg/my7Gvaxj2v)
 
 FilaMan is supported by [Recycling Fabrik](https://www.recyclingfabrik.com).
 Recycling Fabrik will soon offer a FilaMan-compatible NFC tag on their spools. This has the advantage
-that the spools can be automatically recognized and imported into Spoolman directly via FilaMan.
+that the spools can be automatically recognized and imported into the FilaMan-System directly via the FilaMan scale.
 
 **What is Recycling Fabrik?**
 
@@ -39,28 +39,20 @@ More information and products can be found here: [www.recyclingfabrik.com](https
 ### ESP32 Hardware Features
 - **Weight Measurement:** Using a load cell with HX711 amplifier for precise weight tracking.
 - **NFC Tag Reading/Writing:** PN532 module for reading and writing filament data to NFC tags.
-- **OLED Display:** Shows current weight, connection status (WiFi, Bambu Lab, Spoolman).
+- **OLED Display:** Shows current weight and connection status (WiFi, FilaMan-System).
 - **WiFi Connectivity:** WiFiManager for easy network configuration.
-- **MQTT Integration:** Connects to Bambu Lab printer for AMS control.
-- **NFC-Tag NTAG213 NTAG215:** Use NTAG213, better NTAG215 because of enaught space on the Tag
+- **NFC-Tag NTAG213 NTAG215:** Use NTAG213, better NTAG215 because of enough space on the Tag
 
 ### Web Interface Features
 - **Real-time Updates:** WebSocket connection for live data updates.
 - **NFC Tag Management:** 
 	- Write filament data to NFC tags.
-	- uses NFC-Tag Format of [Openspool](https://github.com/spuder/OpenSpool)
-	- so you can use it with automatic Spool detection in AMS
-	- **Manufacturer Tag Support:** Automatic creation of Spoolman entries from manufacturer NFC tags ([Learn more](README_ManufacturerTags_EN.md))
-- **Bambulab AMS Integration:** 
-  - Display current AMS tray contents.
-  - Assign filaments to AMS slots.
-  - Support for external spool holder.
-- **Spoolman Integration:**
-  - List available filament spools.
-  - Filter and select filaments.
+	- Uses NFC-Tag Format of [Openspool](https://github.com/spuder/OpenSpool).
+	- Supports automatic Spool detection in compatible systems.
+- **FilaMan-System Integration:**
+  - Synchronize spool data with the central backend.
   - Update spool weights automatically.
   - Track NFC tag assignments.
-  - Supports Spoolman Octoprint Plugin
 
 ### If you want to support my work, i would be happy to get a coffe
 
@@ -79,29 +71,27 @@ We're thrilled to announce that [**RecyclingFabrik**](https://www.recyclingfabri
 ### How Manufacturer Tags Work
 
 When you scan a manufacturer NFC tag for the first time:
-1. **Automatic Brand Detection:** FilaMan recognizes the manufacturer and creates the brand in Spoolman
-2. **Filament Type Creation:** All material specifications are automatically added
-3. **Spool Registration:** Your specific spool is registered with proper weight and specifications
-4. **Future Fast Recognition:** Subsequent scans use fast-path detection for instant weight measurement
+1. **Automatic Brand Detection:** FilaMan recognizes the manufacturer and creates the brand in the FilaMan-System.
+2. **Filament Type Creation:** All material specifications are automatically added.
+3. **Spool Registration:** Your specific spool is registered with proper weight and specifications.
+4. **Future Fast Recognition:** Subsequent scans use fast-path detection for instant weight measurement.
 
 **For detailed technical information:** [Manufacturer Tags Documentation](README_ManufacturerTags_EN.md)
 
 ### Benefits for Users
 - ✅ **Zero Manual Setup** - Just scan and weigh
 - ✅ **Perfect Data Accuracy** - Manufacturer-verified specifications
-- ✅ **Instant Integration** - Seamless Spoolman compatibility
+- ✅ **Instant Integration** - Seamless FilaMan-System compatibility
 - ✅ **Future-Proof** - Tags work with any FilaMan-compatible system
 
 ## Detailed Functionality
 
 ### ESP32 Functionality
-- **Control and Monitor Print Jobs:** The ESP32 communicates with the Bambu Lab printer to control and monitor print jobs.
-- **Printer Communication:** Uses MQTT for real-time communication with the printer.
 - **User Interactions:** The OLED display provides immediate feedback on the system status, including weight measurements and connection status.
 
 ### Web Interface Functionality
-- **User Interactions:** The web interface allows users to interact with the system, select filaments, write NFC tags, and monitor AMS status.
-- **UI Elements:** Includes dropdowns for selecting manufacturers and filaments, buttons for writing NFC tags, and real-time status indicators.
+- **User Interactions:** The web interface allows users to interact with the system, configure the device, and monitor status.
+- **UI Elements:** Includes forms for registration, buttons for scale actions, and real-time status indicators.
 
 ## Hardware Requirements
 
@@ -153,7 +143,6 @@ A+ green*
 - `WiFiManager`: Network configuration
 - `ESPAsyncWebServer`: Web server functionality
 - `ArduinoJson`: JSON parsing and creation
-- `PubSubClient`: MQTT communication
 - `Adafruit_PN532`: NFC functionality
 - `Adafruit_SSD1306`: OLED display control
 - `HX711`: Load cell communication
@@ -163,7 +152,7 @@ A+ green*
 ## Prerequisites
 - **Software:**
   - [PlatformIO](https://platformio.org/) in VS Code
-  - [Spoolman](https://github.com/Donkie/Spoolman) instance
+  - [FilaMan-System](https://github.com/Fire-Devils/filaman-system) instance
 - **Hardware:**
   - ESP32 Development Board
   - HX711 Load Cell Amplifier
@@ -172,19 +161,8 @@ A+ green*
   - PN532 NFC Module
   - Connecting wires
 
-## Important Note
-You have to activate Spoolman in debug mode, because you are not able to set CORS Domains in Spoolman yet.
 
-```
-# Enable debug mode
-# If enabled, the client will accept requests from any host
-# This can be useful when developing, but is also a security risk
-# Default: FALSE
-#SPOOLMAN_DEBUG_MODE=TRUE
-```
-
-
-## Step-by-Step Installation
+### Step-by-Step Installation
 ### Easy Installation
 1. **Go to [FilaMan Installer](https://www.filaman.app/installer.html)**
 
@@ -200,8 +178,8 @@ You have to activate Spoolman in debug mode, because you are not able to set COR
 ### Compile by yourself
 1. **Clone the Repository:**
     ```bash
-    git clone https://github.com/ManuelW77/Filaman.git
-    cd FilaMan
+    git clone https://github.com/ManuelW77/Filaman-System-esp32.git
+    cd Filaman-System-esp32
     ```
 2. **Install Dependencies:**
     ```bash
@@ -219,9 +197,8 @@ You have to activate Spoolman in debug mode, because you are not able to set COR
 ## Documentation
 
 ### Relevant Links
+- [FilaMan-System](https://github.com/Fire-Devils/filaman-system)
 - [PlatformIO Documentation](https://docs.platformio.org/)
-- [Spoolman Documentation](https://github.com/Donkie/Spoolman)
-- [Bambu Lab Printer Documentation](https://www.bambulab.com/)
 
 ### Tutorials and Examples
 - [PlatformIO Getting Started](https://docs.platformio.org/en/latest/tutorials/espressif32/arduino_debugging_unit_testing.html)
@@ -245,7 +222,7 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## Availability
 
-The code can be tested and the application can be downloaded from the [GitHub repository](https://github.com/ManuelW77/Filaman).
+The code can be tested and the application can be downloaded from the [GitHub repository](https://github.com/ManuelW77/Filaman-System-esp32).
 
 ### If you want to support my work, i would be happy to get a coffe
 <a href="https://www.buymeacoffee.com/manuelw" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 30px !important;width: 108px !important;" ></a>
