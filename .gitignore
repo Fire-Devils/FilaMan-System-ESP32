@@ -30,4 +30,5 @@ html/spoolman_url.json
 website/*
 release.sh
 wiki
-_*
+_*backup_lang_zh/
+docs/CHINESE_LANGUAGE_PATCH.diff
