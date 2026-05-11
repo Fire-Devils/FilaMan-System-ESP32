@@ -159,168 +159,90 @@ static const char DE_NOSCALE_MODE[]      = "Aktiviere NFC-only Modus";
 static const char DE_NOSCALE_PROMPT[]    = "bereit...";
 
 // =====================================================================
-// Chinese (Simplified) strings
-// =====================================================================
-static const char ZH_DISPLAY_INIT[]      = "显示屏初始化";
-static const char ZH_WIFI_INIT[]         = "WiFi初始化";
-static const char ZH_WEBSERVER_INIT[]    = "Web服务器启动";
-static const char ZH_API_INIT[]          = "API初始化";
-static const char ZH_NFC_INIT[]          = "NFC初始化";
-static const char ZH_SEARCHING_SCALE[]   = "正在搜索秤";
-static const char ZH_INIT_DONE[]         = "设置完成";
-
-static const char ZH_TARE_SCALE[]        = "清零秤";
-static const char ZH_SCALE_NOT_CAL[]     = "秤未校准";
-static const char ZH_SCALE_CAL[]         = "校准天平";
-static const char ZH_EMPTY_SCALE[]       = "清空秤";
-static const char ZH_PLACE_WEIGHT[]      = "放置砝码";
-static const char ZH_REMOVE_WEIGHT[]     = "移除砝码";
-static const char ZH_COMPLETED[]         = "完成";
-static const char ZH_CAL_ERROR[]         = "校准错误";
-static const char ZH_HX711_NOT_FOUND[]   = "未找到HX711";
-
-static const char ZH_READING[]           = "读取中";
-static const char ZH_DECODING_DATA[]     = "解码数据";
-static const char ZH_SPOOL_TAG[]         = "线轴标签";
-static const char ZH_WEIGHING[]          = "称重中...";
-static const char ZH_WEIGHT_STABLE[]     = "重量稳定";
-static const char ZH_SENDING[]           = "发送中...";
-static const char ZH_TAG_WRITTEN[]       = "标签已写入";
-static const char ZH_WRITING[]           = "写入中";
-static const char ZH_WRITE_TAG[]         = "写入标签";
-static const char ZH_DONE[]              = "完成!";
-static const char ZH_PLACE_TAG_NOW[]     = "现在放置标签";
-static const char ZH_DETECTING_TAG[]     = "检测标签";
-static const char ZH_KNOWN_SPOOL[]       = "已知线轴";
-static const char ZH_QUICK_MODE[]        = "快速模式";
-static const char ZH_LOCATION[]          = "位置";
-static const char ZH_LOCATION_SET[]      = "位置已设置";
-static const char ZH_SCAN_SPOOL_FIRST[] = "请先扫描线轴";
-static const char ZH_WAIT_FMT[]          = "等待... %ds";
-
-static const char ZH_NOT_REGISTERED[]    = "未注册";
-static const char ZH_API_CONN_LOST[]     = "API连接丢失";
-static const char ZH_API_ERROR[]         = "API错误";
-static const char ZH_API_OFFLINE[]       = "API离线";
-static const char ZH_WEIGHT_SENT_REST[]  = "已发送, 剩余:";
-
-static const char ZH_FAILURE[]           = "失败";
-static const char ZH_FAILURE_EXCL[]      = "失败!";
-static const char ZH_UNKNOWN_TAG[]       = "未知标签";
-static const char ZH_UNKNOWN_TAG_TYPE[]  = "未知标签类型";
-static const char ZH_NO_TAG_FOUND[]      = "未找到标签";
-static const char ZH_NFC_BUSY[]          = "NFC忙!";
-static const char ZH_TAG_READ_ERROR[]    = "标签读取错误";
-static const char ZH_TAG_TOO_SMALL[]     = "标签太小";
-static const char ZH_NFC_RESET_FAIL[]    = "NFC重置失败";
-static const char ZH_TAG_LOST_RESET[]    = "重置后标签丢失";
-static const char ZH_NFC_STILL_BROKEN[]  = "NFC仍损坏";
-static const char ZH_TAG_DEFECT[]        = "标签/接口损坏";
-static const char ZH_TEST_READ_ERROR[]   = "测试页读取错误";
-static const char ZH_TAG_REMOVED[]       = "标签已移除";
-static const char ZH_TAG_WRITE_PROT[]    = "标签写保护?";
-static const char ZH_TEST_VERIFY_FAIL[]  = "测试验证失败";
-static const char ZH_NDEF_INIT_FAIL[]    = "NDEF初始化失败";
-static const char ZH_NFC_UNSTABLE[]      = "NFC接口不稳定";
-static const char ZH_MEMORY_ERROR[]      = "内存错误";
-static const char ZH_NO_RFID_BOARD[]     = "未找到RFID板";
-
-static const char ZH_WIFI_CONFIG[]       = "WiFi配置模式";
-static const char ZH_WIFI_NOT_CONN[]     = "WiFi未连接 请检查门户";
-static const char ZH_WIFI_RECONN[]       = "WiFi重连中";
-
-static const char ZH_UPDATE[]            = "更新";
-static const char ZH_DOWNLOAD[]          = "下载";
-
-static const char ZH_NOSCALE_MODE[]      = "激活NFC-only模式";
-static const char ZH_NOSCALE_PROMPT[]    = "就绪...";
-
-
-// =====================================================================
 // String table: [StringID][Lang]
 // =====================================================================
 static const char* const stringTable[STR_COUNT][LANG_COUNT] = {
     // Boot / Init
-    { EN_DISPLAY_INIT, DE_DISPLAY_INIT, ZH_DISPLAY_INIT },
-    { EN_WIFI_INIT, DE_WIFI_INIT, ZH_WIFI_INIT },
-    { EN_WEBSERVER_INIT, DE_WEBSERVER_INIT, ZH_WEBSERVER_INIT },
-    { EN_API_INIT, DE_API_INIT, ZH_API_INIT },
-    { EN_NFC_INIT, DE_NFC_INIT, ZH_NFC_INIT },
-    { EN_SEARCHING_SCALE, DE_SEARCHING_SCALE, ZH_SEARCHING_SCALE },
-    { EN_INIT_DONE, DE_INIT_DONE, ZH_INIT_DONE },
+    { EN_DISPLAY_INIT,     DE_DISPLAY_INIT },
+    { EN_WIFI_INIT,        DE_WIFI_INIT },
+    { EN_WEBSERVER_INIT,   DE_WEBSERVER_INIT },
+    { EN_API_INIT,         DE_API_INIT },
+    { EN_NFC_INIT,         DE_NFC_INIT },
+    { EN_SEARCHING_SCALE,  DE_SEARCHING_SCALE },
+    { EN_INIT_DONE,        DE_INIT_DONE },
 
     // Scale
-    { EN_TARE_SCALE, DE_TARE_SCALE, ZH_TARE_SCALE },
-    { EN_SCALE_NOT_CAL, DE_SCALE_NOT_CAL, ZH_SCALE_NOT_CAL },
-    { EN_SCALE_CAL, DE_SCALE_CAL, ZH_SCALE_CAL },
-    { EN_EMPTY_SCALE, DE_EMPTY_SCALE, ZH_EMPTY_SCALE },
-    { EN_PLACE_WEIGHT, DE_PLACE_WEIGHT, ZH_PLACE_WEIGHT },
-    { EN_REMOVE_WEIGHT, DE_REMOVE_WEIGHT, ZH_REMOVE_WEIGHT },
-    { EN_COMPLETED, DE_COMPLETED, ZH_COMPLETED },
-    { EN_CAL_ERROR, DE_CAL_ERROR, ZH_CAL_ERROR },
-    { EN_HX711_NOT_FOUND, DE_HX711_NOT_FOUND, ZH_HX711_NOT_FOUND },
+    { EN_TARE_SCALE,       DE_TARE_SCALE },
+    { EN_SCALE_NOT_CAL,    DE_SCALE_NOT_CAL },
+    { EN_SCALE_CAL,        DE_SCALE_CAL },
+    { EN_EMPTY_SCALE,      DE_EMPTY_SCALE },
+    { EN_PLACE_WEIGHT,     DE_PLACE_WEIGHT },
+    { EN_REMOVE_WEIGHT,    DE_REMOVE_WEIGHT },
+    { EN_COMPLETED,        DE_COMPLETED },
+    { EN_CAL_ERROR,        DE_CAL_ERROR },
+    { EN_HX711_NOT_FOUND,  DE_HX711_NOT_FOUND },
 
     // NFC / Spool
-    { EN_READING, DE_READING, ZH_READING },
-    { EN_DECODING_DATA, DE_DECODING_DATA, ZH_DECODING_DATA },
-    { EN_SPOOL_TAG, DE_SPOOL_TAG, ZH_SPOOL_TAG },
-    { EN_WEIGHING, DE_WEIGHING, ZH_WEIGHING },
-    { EN_WEIGHT_STABLE, DE_WEIGHT_STABLE, ZH_WEIGHT_STABLE },
-    { EN_SENDING, DE_SENDING, ZH_SENDING },
-    { EN_TAG_WRITTEN, DE_TAG_WRITTEN, ZH_TAG_WRITTEN },
-    { EN_WRITING, DE_WRITING, ZH_WRITING },
-    { EN_WRITE_TAG, DE_WRITE_TAG, ZH_WRITE_TAG },
-    { EN_DONE, DE_DONE, ZH_DONE },
-    { EN_PLACE_TAG_NOW, DE_PLACE_TAG_NOW, ZH_PLACE_TAG_NOW },
-    { EN_DETECTING_TAG, DE_DETECTING_TAG, ZH_DETECTING_TAG },
-    { EN_KNOWN_SPOOL, DE_KNOWN_SPOOL, ZH_KNOWN_SPOOL },
-    { EN_QUICK_MODE, DE_QUICK_MODE, ZH_QUICK_MODE },
-    { EN_LOCATION, DE_LOCATION, ZH_LOCATION },
-    { EN_LOCATION_SET, DE_LOCATION_SET, ZH_LOCATION_SET },
-    { EN_SCAN_SPOOL_FIRST, DE_SCAN_SPOOL_FIRST, ZH_SCAN_SPOOL_FIRST },
-    { EN_WAIT_FMT, DE_WAIT_FMT, ZH_WAIT_FMT },
+    { EN_READING,          DE_READING },
+    { EN_DECODING_DATA,    DE_DECODING_DATA },
+    { EN_SPOOL_TAG,        DE_SPOOL_TAG },
+    { EN_WEIGHING,         DE_WEIGHING },
+    { EN_WEIGHT_STABLE,    DE_WEIGHT_STABLE },
+    { EN_SENDING,          DE_SENDING },
+    { EN_TAG_WRITTEN,      DE_TAG_WRITTEN },
+    { EN_WRITING,          DE_WRITING },
+    { EN_WRITE_TAG,        DE_WRITE_TAG },
+    { EN_DONE,             DE_DONE },
+    { EN_PLACE_TAG_NOW,    DE_PLACE_TAG_NOW },
+    { EN_DETECTING_TAG,    DE_DETECTING_TAG },
+    { EN_KNOWN_SPOOL,      DE_KNOWN_SPOOL },
+    { EN_QUICK_MODE,       DE_QUICK_MODE },
+    { EN_LOCATION,         DE_LOCATION },
+    { EN_LOCATION_SET,     DE_LOCATION_SET },
+    { EN_SCAN_SPOOL_FIRST, DE_SCAN_SPOOL_FIRST },
+    { EN_WAIT_FMT,         DE_WAIT_FMT },
 
     // Connection / API
-    { EN_NOT_REGISTERED, DE_NOT_REGISTERED, ZH_NOT_REGISTERED },
-    { EN_API_CONN_LOST, DE_API_CONN_LOST, ZH_API_CONN_LOST },
-    { EN_API_ERROR, DE_API_ERROR, ZH_API_ERROR },
-    { EN_API_OFFLINE, DE_API_OFFLINE, ZH_API_OFFLINE },
-    { EN_WEIGHT_SENT_REST, DE_WEIGHT_SENT_REST, ZH_WEIGHT_SENT_REST },
+    { EN_NOT_REGISTERED,   DE_NOT_REGISTERED },
+    { EN_API_CONN_LOST,    DE_API_CONN_LOST },
+    { EN_API_ERROR,        DE_API_ERROR },
+    { EN_API_OFFLINE,      DE_API_OFFLINE },
+    { EN_WEIGHT_SENT_REST, DE_WEIGHT_SENT_REST },
 
     // Errors
-    { EN_FAILURE, DE_FAILURE, ZH_FAILURE },
-    { EN_FAILURE_EXCL, DE_FAILURE_EXCL, ZH_FAILURE_EXCL },
-    { EN_UNKNOWN_TAG, DE_UNKNOWN_TAG, ZH_UNKNOWN_TAG },
-    { EN_UNKNOWN_TAG_TYPE, DE_UNKNOWN_TAG_TYPE, ZH_UNKNOWN_TAG_TYPE },
-    { EN_NO_TAG_FOUND, DE_NO_TAG_FOUND, ZH_NO_TAG_FOUND },
-    { EN_NFC_BUSY, DE_NFC_BUSY, ZH_NFC_BUSY },
-    { EN_TAG_READ_ERROR, DE_TAG_READ_ERROR, ZH_TAG_READ_ERROR },
-    { EN_TAG_TOO_SMALL, DE_TAG_TOO_SMALL, ZH_TAG_TOO_SMALL },
-    { EN_NFC_RESET_FAIL, DE_NFC_RESET_FAIL, ZH_NFC_RESET_FAIL },
-    { EN_TAG_LOST_RESET, DE_TAG_LOST_RESET, ZH_TAG_LOST_RESET },
-    { EN_NFC_STILL_BROKEN, DE_NFC_STILL_BROKEN, ZH_NFC_STILL_BROKEN },
-    { EN_TAG_DEFECT, DE_TAG_DEFECT, ZH_TAG_DEFECT },
-    { EN_TEST_READ_ERROR, DE_TEST_READ_ERROR, ZH_TEST_READ_ERROR },
-    { EN_TAG_REMOVED, DE_TAG_REMOVED, ZH_TAG_REMOVED },
-    { EN_TAG_WRITE_PROT, DE_TAG_WRITE_PROT, ZH_TAG_WRITE_PROT },
-    { EN_TEST_VERIFY_FAIL, DE_TEST_VERIFY_FAIL, ZH_TEST_VERIFY_FAIL },
-    { EN_NDEF_INIT_FAIL, DE_NDEF_INIT_FAIL, ZH_NDEF_INIT_FAIL },
-    { EN_NFC_UNSTABLE, DE_NFC_UNSTABLE, ZH_NFC_UNSTABLE },
-    { EN_MEMORY_ERROR, DE_MEMORY_ERROR, ZH_MEMORY_ERROR },
-    { EN_NO_RFID_BOARD, DE_NO_RFID_BOARD, ZH_NO_RFID_BOARD },
+    { EN_FAILURE,          DE_FAILURE },
+    { EN_FAILURE_EXCL,     DE_FAILURE_EXCL },
+    { EN_UNKNOWN_TAG,      DE_UNKNOWN_TAG },
+    { EN_UNKNOWN_TAG_TYPE, DE_UNKNOWN_TAG_TYPE },
+    { EN_NO_TAG_FOUND,     DE_NO_TAG_FOUND },
+    { EN_NFC_BUSY,         DE_NFC_BUSY },
+    { EN_TAG_READ_ERROR,   DE_TAG_READ_ERROR },
+    { EN_TAG_TOO_SMALL,    DE_TAG_TOO_SMALL },
+    { EN_NFC_RESET_FAIL,   DE_NFC_RESET_FAIL },
+    { EN_TAG_LOST_RESET,   DE_TAG_LOST_RESET },
+    { EN_NFC_STILL_BROKEN, DE_NFC_STILL_BROKEN },
+    { EN_TAG_DEFECT,       DE_TAG_DEFECT },
+    { EN_TEST_READ_ERROR,  DE_TEST_READ_ERROR },
+    { EN_TAG_REMOVED,      DE_TAG_REMOVED },
+    { EN_TAG_WRITE_PROT,   DE_TAG_WRITE_PROT },
+    { EN_TEST_VERIFY_FAIL, DE_TEST_VERIFY_FAIL },
+    { EN_NDEF_INIT_FAIL,   DE_NDEF_INIT_FAIL },
+    { EN_NFC_UNSTABLE,     DE_NFC_UNSTABLE },
+    { EN_MEMORY_ERROR,     DE_MEMORY_ERROR },
+    { EN_NO_RFID_BOARD,    DE_NO_RFID_BOARD },
 
     // WiFi
-    { EN_WIFI_CONFIG, DE_WIFI_CONFIG, ZH_WIFI_CONFIG },
-    { EN_WIFI_NOT_CONN, DE_WIFI_NOT_CONN, ZH_WIFI_NOT_CONN },
-    { EN_WIFI_RECONN, DE_WIFI_RECONN, ZH_WIFI_RECONN },
+    { EN_WIFI_CONFIG,      DE_WIFI_CONFIG },
+    { EN_WIFI_NOT_CONN,    DE_WIFI_NOT_CONN },
+    { EN_WIFI_RECONN,      DE_WIFI_RECONN },
 
     // OTA
-    { EN_UPDATE, DE_UPDATE, ZH_UPDATE },
-    { EN_DOWNLOAD, DE_DOWNLOAD, ZH_DOWNLOAD },
+    { EN_UPDATE,           DE_UPDATE },
+    { EN_DOWNLOAD,         DE_DOWNLOAD },
 
     // No-Scale mode
-    { EN_NOSCALE_MODE, DE_NOSCALE_MODE, ZH_NOSCALE_MODE },
-    { EN_NOSCALE_PROMPT, DE_NOSCALE_PROMPT, ZH_NOSCALE_PROMPT },
+    { EN_NOSCALE_MODE,     DE_NOSCALE_MODE },
+    { EN_NOSCALE_PROMPT,   DE_NOSCALE_PROMPT },
 };
 
 const char* tr(StringID id) {
@@ -348,9 +270,5 @@ void saveLanguage(Lang lang) {
 }
 
 const char* getLangCode() {
-    switch (currentLang) {
-        case LANG_DE: return "de";
-        case LANG_ZH: return "zh";
-        default:     return "en";
-    }
+    return (currentLang == LANG_DE) ? "de" : "en";
 }

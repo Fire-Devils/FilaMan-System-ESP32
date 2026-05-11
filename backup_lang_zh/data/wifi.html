@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en" data-lang-support="en,de,zh">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FilaMan - Filament Management</title>
+    <title>FilaMan - WiFi Info</title>
     <link rel="icon" type="image/png" href="/favicon.ico">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -17,7 +17,7 @@
                 </div>
             </div>
             <nav class="fm-nav">
-                <a href="/" class="active">Start</a>
+                <a href="/">Start</a>
                 <a href="/waage">Scale</a>
                 <a href="/setup">Setup</a>
                 <a href="/upgrade">Upgrade</a>
@@ -35,39 +35,19 @@
 
         <main class="fm-main">
             <header>
-                <h1>Welcome to FilaMan</h1>
-                <p>Your smart solution for <strong>Filament Management</strong> in 3D printing.</p>
+                <h1>WiFi Configuration</h1>
+                <p>Connection status and network management.</p>
             </header>
 
-            <div class="fm-card" style="border-color: var(--accent-3); background: rgba(247, 200, 106, 0.05);">
-                <h3 style="color: var(--accent-3);">System Compatibility</h3>
-                <p>
-                    Starting with <strong>Version 3.0.0</strong>, this scale is exclusively designed for use with the 
-                    <a href="https://github.com/Fire-Devils/filaman-system" target="_blank" style="color: var(--accent-2); text-decoration: underline;">FilaMan-System</a>.
-                </p>
-            </div>
-
             <div class="fm-card">
-                <h2>About FilaMan</h2>
+                <h2>Connected</h2>
+                <p>Your device is currently connected to WiFi and operating normally.</p>
                 <p>
-                    FilaMan is designed to simplify filament spool management. Identify and weigh your spools 
-                    automatically and keep your inventory synced with the FilaMan-System.
+                    To change network settings or connect to a different access point, 
+                    please use the hardware reset button (if available) or the WiFi manager portal.
                 </p>
-                <a href="https://www.filaman.app" target="_blank" class="fm-btn fm-btn-outline">Visit Website</a>
-            </div>
-
-            <div class="features-grid">
-                <div class="fm-card fm-card-hover">
-                    <h3>Spool Identification</h3>
-                    <p>Easily identify filament spools using NFC tags for instant tracking.</p>
-                </div>
-                <div class="fm-card fm-card-hover">
-                    <h3>Automatic Sync</h3>
-                    <p>Seamlessly update spool data with the FilaMan API for accurate tracking.</p>
-                </div>
-                <div class="fm-card fm-card-hover">
-                    <h3>Scale Integration</h3>
-                    <p>Built-in scale support for precise remaining weight calculation.</p>
+                <div style="margin-top: 1.5rem;">
+                    <span class="status-pill">Connected via Station Mode</span>
                 </div>
             </div>
         </main>

@@ -7,7 +7,6 @@
 enum Lang : uint8_t {
     LANG_EN = 0,
     LANG_DE = 1,
-    LANG_ZH = 2,
     LANG_COUNT
 };
 
