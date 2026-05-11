@@ -126,13 +126,13 @@ void sendNfcData() {
 /* 自动生成的多语言 UI 字符串映射函数 */
 String getUIString(const char* key) {
     Lang lang = currentLang;
-    
+
     // Navigation
     if (strcmp(key, "NAV_HOME") == 0) {
-        return (lang == LANG_DE) ? "Start" : (lang == LANG_ZH) ? "开始" : "Start";
+        return (lang == LANG_DE) ? "Start" : (lang == LANG_ZH) ? "首页" : "Home";
     }
     if (strcmp(key, "NAV_SCALE") == 0) {
-        return (lang == LANG_DE) ? "Waage" : (lang == LANG_ZH) ? "秤" : "Scale";
+        return (lang == LANG_DE) ? "Waage" : (lang == LANG_ZH) ? "称重" : "Scale";
     }
     if (strcmp(key, "NAV_SETUP") == 0) {
         return (lang == LANG_DE) ? "Setup" : (lang == LANG_ZH) ? "设置" : "Setup";
@@ -140,17 +140,15 @@ String getUIString(const char* key) {
     if (strcmp(key, "NAV_UPGRADE") == 0) {
         return (lang == LANG_DE) ? "Upgrade" : (lang == LANG_ZH) ? "升级" : "Upgrade";
     }
-    
+
     // Common UI
     if (strcmp(key, "SYSTEM_SYNC") == 0) {
         return (lang == LANG_DE) ? "System Sync" : (lang == LANG_ZH) ? "系统同步" : "System Sync";
     }
-    
-    // Version label
     if (strcmp(key, "VERSION_LABEL") == 0) {
         return (lang == LANG_DE) ? "" : (lang == LANG_ZH) ? "" : "v";
     }
-    
+
     // index.html
     if (strcmp(key, "WELCOME_TITLE") == 0) {
         return (lang == LANG_DE) ? "Willkommen bei FilaMan" : (lang == LANG_ZH) ? "欢迎使用 FilaMan" : "Welcome to FilaMan";
@@ -159,7 +157,7 @@ String getUIString(const char* key) {
         return (lang == LANG_DE) ? "Ihre smarte Lösung für" : (lang == LANG_ZH) ? "您的智能" : "Your smart solution for";
     }
     if (strcmp(key, "WELCOME_SUBTITLE_2") == 0) {
-        return (lang == LANG_DE) ? "Filament-Management" : (lang == LANG_ZH) ? "耗材管理" : "Filament Management";
+        return (lang == LANG_DE) ? "Filament-Management" : (lang == LANG_ZH) ? "丝材管理" : "Filament Management";
     }
     if (strcmp(key, "WELCOME_SUBTITLE_3") == 0) {
         return (lang == LANG_DE) ? "im 3D-Druck." : (lang == LANG_ZH) ? "3D打印解决方案" : "in 3D printing.";
@@ -168,155 +166,128 @@ String getUIString(const char* key) {
         return (lang == LANG_DE) ? "System-Kompatibilität" : (lang == LANG_ZH) ? "系统兼容性" : "System Compatibility";
     }
     if (strcmp(key, "COMPAT_TEXT_1") == 0) {
-        return (lang == LANG_DE) ? "Ab" : (lang == LANG_ZH) ? "从" : "Starting with";
+        return (lang == LANG_DE) ? "Ab" : (lang == LANG_ZH) ? "始于" : "Starting with";
     }
     if (strcmp(key, "COMPAT_TEXT_2") == 0) {
         return (lang == LANG_DE) ? "Version 3.0.0" : (lang == LANG_ZH) ? "3.0.0 版本" : "Version 3.0.0";
     }
     if (strcmp(key, "COMPAT_TEXT_3") == 0) {
-        return (lang == LANG_DE) ? "ist diese Waage ausschließlich für die Verwendung mit dem" : (lang == LANG_ZH) ? "这款秤专为配合" : "this scale is exclusively designed for use with the";
+        return (lang == LANG_DE) ? "mit ESP32" : (lang == LANG_ZH) ? "基于 ESP32" : "with ESP32";
     }
     if (strcmp(key, "COMPAT_TEXT_4") == 0) {
-        return (lang == LANG_DE) ? "FilaMan-System" : (lang == LANG_ZH) ? "FilaMan 系统" : "FilaMan-System";
+        return (lang == LANG_DE) ? "& OLED Display" : (lang == LANG_ZH) ? "与 OLED 显示屏" : "& OLED Display";
     }
     if (strcmp(key, "FEATURE_TRACKING_TITLE") == 0) {
-        return (lang == LANG_DE) ? "Filament-Verfolgung" : (lang == LANG_ZH) ? "耗材追踪" : "Filament Tracking";
+        return (lang == LANG_DE) ? "Präzise Rückverfolgung" : (lang == LANG_ZH) ? "精准追踪" : "Precise Tracking";
     }
     if (strcmp(key, "FEATURE_TRACKING_DESC") == 0) {
-        return (lang == LANG_DE) ? "Einfaches Identifizieren von Filament-Spulen mit NFC-Tags für sofortige Rückverfolgung." : (lang == LANG_ZH) ? "使用 NFC 标签轻松识别线轴，实现即时追踪。" : "Easily identify filament spools using NFC tags for instant tracking.";
+        return (lang == LANG_DE) ? "Nahtlose Aktualisierung der Spulendaten über die FilaMan-API für präzise Rückverfolgung." : (lang == LANG_ZH) ? "通过 FilaMan API 无缝更新丝材数据，实现精准追踪。" : "Seamlessly update spool data via FilaMan API for precise tracking.";
     }
     if (strcmp(key, "FEATURE_SYNC_TITLE") == 0) {
-        return (lang == LANG_DE) ? "Cloud-Synchronisation" : (lang == LANG_ZH) ? "云端同步" : "Cloud Sync";
+        return (lang == LANG_DE) ? "Automatische Synchronisation" : (lang == LANG_ZH) ? "自动同步" : "Automatic Sync";
     }
     if (strcmp(key, "FEATURE_SYNC_DESC") == 0) {
-        return (lang == LANG_DE) ? "Nahtlose Aktualisierung der Spulendaten über die FilaMan-API für präzise Rückverfolgung." : (lang == LANG_ZH) ? "通过 FilaMan API 无缝同步线轴数据，实现精确追踪。" : "Seamlessly update spool data with the FilaMan API for accurate tracking.";
+        return (lang == LANG_DE) ? "Spulendaten automatisch mit der Cloud synchronisieren, um den Bestand immer aktuell zu halten." : (lang == LANG_ZH) ? "自动与云端同步丝材数据，保持库存始终最新。" : "Automatically sync spool data with cloud to keep inventory up-to-date.";
     }
     if (strcmp(key, "FEATURE_WEIGH_TITLE") == 0) {
-        return (lang == LANG_DE) ? "Präzises Wiegen" : (lang == LANG_ZH) ? "精密称重" : "Precision Weighing";
+        return (lang == LANG_DE) ? "Präzises Wiegen" : (lang == LANG_ZH) ? "精准称重" : "Precise Weighing";
     }
     if (strcmp(key, "FEATURE_WEIGH_DESC") == 0) {
-        return (lang == LANG_DE) ? "Integrierte Waage-Unterstützung für exakte Restgewichtsberechnung." : (lang == LANG_ZH) ? "内置称重支持，可精确计算剩余重量。" : "Built-in scale support for precise remaining weight calculation.";
+        return (lang == LANG_DE) ? "HX711-Sensor für genaue Gewichtsmessung der Spulen." : (lang == LANG_ZH) ? "HX711 传感器，精确测量丝材重量。" : "HX711 sensor for accurate spool weight measurement.";
     }
     if (strcmp(key, "BTN_GET_STARTED") == 0) {
         return (lang == LANG_DE) ? "Loslegen" : (lang == LANG_ZH) ? "开始使用" : "Get Started";
     }
-    
+
     // setup.html
     if (strcmp(key, "SETUP_TITLE") == 0) {
-        return (lang == LANG_DE) ? "Geräte-Setup" : (lang == LANG_ZH) ? "设备设置" : "Device Setup";
+        return (lang == LANG_DE) ? "Setup" : (lang == LANG_ZH) ? "系统设置" : "Setup";
     }
     if (strcmp(key, "REGISTER_TITLE") == 0) {
-        return (lang == LANG_DE) ? "System-Registrierung" : (lang == LANG_ZH) ? "系统注册" : "System Registration";
-    }
-    if (strcmp(key, "REGISTER_URL_LABEL") == 0) {
-        return (lang == LANG_DE) ? "FilaMan URL" : (lang == LANG_ZH) ? "FilaMan 地址" : "FilaMan URL";
-    }
-    if (strcmp(key, "REGISTER_CODE_LABEL") == 0) {
-        return (lang == LANG_DE) ? "Geräte-Code" : (lang == LANG_ZH) ? "设备代码" : "Device Code";
-    }
-    if (strcmp(key, "REGISTER_BTN") == 0) {
         return (lang == LANG_DE) ? "Gerät registrieren" : (lang == LANG_ZH) ? "注册设备" : "Register Device";
     }
-    if (strcmp(key, "DISPLAY_TITLE") == 0) {
-        return (lang == LANG_DE) ? "Anzeige-Einstellungen" : (lang == LANG_ZH) ? "显示设置" : "Display Settings";
+    if (strcmp(key, "REGISTER_URL_LABEL") == 0) {
+        return (lang == LANG_DE) ? "FilaMan URL" : (lang == LANG_ZH) ? "FilaMan 网址" : "FilaMan URL";
+    }
+    if (strcmp(key, "REGISTER_CODE_LABEL") == 0) {
+        return (lang == LANG_DE) ? "Registrierungscode" : (lang == LANG_ZH) ? "注册码" : "Registration Code";
+    }
+    if (strcmp(key, "REGISTER_BTN") == 0) {
+        return (lang == LANG_DE) ? "Registrieren" : (lang == LANG_ZH) ? "注册" : "Register";
+    }
+    if (strcmp(key, "DEVICE_ID_LABEL") == 0) {
+        return (lang == LANG_DE) ? "Geräte-ID" : (lang == LANG_ZH) ? "设备 ID" : "Device ID";
+    }
+    if (strcmp(key, "DEVICE_KEY_LABEL") == 0) {
+        return (lang == LANG_DE) ? "Geräte-Schlüssel" : (lang == LANG_ZH) ? "设备密钥" : "Device Key";
+    }
+    if (strcmp(key, "DEVICE_TOKEN_LABEL") == 0) {
+        return (lang == LANG_DE) ? "Geräte-Token" : (lang == LANG_ZH) ? "设备令牌" : "Device Token";
     }
     if (strcmp(key, "DISPLAY_LANG_LABEL") == 0) {
-        return (lang == LANG_DE) ? "Anzeige-Sprache" : (lang == LANG_ZH) ? "显示语言" : "Display Language";
+        return (lang == LANG_DE) ? "Display-Sprache" : (lang == LANG_ZH) ? "显示语言" : "Display Language";
     }
-    if (strcmp(key, "DISPLAY_SLEEP_LABEL") == 0) {
-        return (lang == LANG_DE) ? "OLED Sleep-Timeout" : (lang == LANG_ZH) ? "OLED 休眠超时" : "OLED Sleep Timeout";
+    if (strcmp(key, "DISPLAY_LANG_OPTION_EN") == 0) {
+        return (lang == LANG_DE) ? "Englisch" : (lang == LANG_ZH) ? "英语" : "English";
     }
-    if (strcmp(key, "DISPLAY_SECONDS_LABEL") == 0) {
-        return (lang == LANG_DE) ? "Sekunden" : (lang == LANG_ZH) ? "秒" : "seconds";
+    if (strcmp(key, "DISPLAY_LANG_OPTION_DE") == 0) {
+        return (lang == LANG_DE) ? "Deutsch" : (lang == LANG_ZH) ? "德语" : "German";
     }
-    if (strcmp(key, "REGISTER_ERROR_1") == 0) {
-        return (lang == LANG_DE) ? "Bitte beide Felder ausfüllen (URL und Code)" : (lang == LANG_ZH) ? "请填写 URL 和代码" : "Please provide both URL and Code";
+    if (strcmp(key, "DISPLAY_LANG_OPTION_ZH") == 0) {
+        return (lang == LANG_DE) ? "Chinesisch" : (lang == LANG_ZH) ? "中文" : "Chinese";
     }
-    if (strcmp(key, "REGISTER_PROGRESS") == 0) {
-        return (lang == LANG_DE) ? "Registriere Gerät..." : (lang == LANG_ZH) ? "正在注册设备..." : "Registering device...";
+    if (strcmp(key, "THEME_LABEL") == 0) {
+        return (lang == LANG_DE) ? "Theme" : (lang == LANG_ZH) ? "主题" : "Theme";
     }
-    if (strcmp(key, "REGISTER_SUCCESS") == 0) {
-        return (lang == LANG_DE) ? "Registrierung erfolgreich!" : (lang == LANG_ZH) ? "注册成功！" : "Registration successful!";
+    if (strcmp(key, "THEME_LIGHT") == 0) {
+        return (lang == LANG_DE) ? "Hell" : (lang == LANG_ZH) ? "浅色" : "Light";
     }
-    if (strcmp(key, "REGISTER_FAILED") == 0) {
-        return (lang == LANG_DE) ? "Registrierung fehlgeschlagen. Bitte Code und URL prüfen." : (lang == LANG_ZH) ? "注册失败。请检查代码和 URL。" : "Registration failed. Please check your code and URL.";
+    if (strcmp(key, "THEME_DARK") == 0) {
+        return (lang == LANG_DE) ? "Dunkel" : (lang == LANG_ZH) ? "深色" : "Dark";
     }
-    if (strcmp(key, "SETTING_SAVED") == 0) {
-        return (lang == LANG_DE) ? "Gespeichert." : (lang == LANG_ZH) ? "已保存。" : "Saved.";
+    if (strcmp(key, "TIMEZONE_LABEL") == 0) {
+        return (lang == LANG_DE) ? "Zeitzone" : (lang == LANG_ZH) ? "时区" : "Timezone";
     }
-    if (strcmp(key, "SETTING_ERROR") == 0) {
-        return (lang == LANG_DE) ? "Fehler beim Speichern." : (lang == LANG_ZH) ? "保存失败。" : "Error saving setting.";
+    if (strcmp(key, "TIMEZONE_AUTO") == 0) {
+        return (lang == LANG_DE) ? "Automatisch" : (lang == LANG_ZH) ? "自动" : "Automatic";
     }
-    
+    if (strcmp(key, "TIMEZONE_MANUAL") == 0) {
+        return (lang == LANG_DE) ? "Manuell" : (lang == LANG_ZH) ? "手动" : "Manual";
+    }
+    if (strcmp(key, "SAVE_BTN") == 0) {
+        return (lang == LANG_DE) ? "Speichern" : (lang == LANG_ZH) ? "保存" : "Save";
+    }
+    if (strcmp(key, "CANCEL_BTN") == 0) {
+        return (lang == LANG_DE) ? "Abbrechen" : (lang == LANG_ZH) ? "取消" : "Cancel";
+    }
+
     // waage.html
-    if (strcmp(key, "SCALE_TITLE") == 0) {
-        return (lang == LANG_DE) ? "Waagen-Konfiguration" : (lang == LANG_ZH) ? "秤配置" : "Scale Configuration";
+    if (strcmp(key, "WAAGE_TITLE") == 0) {
+        return (lang == LANG_DE) ? "Waage" : (lang == LANG_ZH) ? "称重" : "Scale";
     }
-    if (strcmp(key, "SCALE_ACTIONS_TITLE") == 0) {
-        return (lang == LANG_DE) ? "Waagen-Aktionen" : (lang == LANG_ZH) ? "秤操作" : "Scale Actions";
+    if (strcmp(key, "WEIGHT_LABEL") == 0) {
+        return (lang == LANG_DE) ? "Gewicht" : (lang == LANG_ZH) ? "重量" : "Weight";
     }
-    if (strcmp(key, "SCALE_TARE_BTN") == 0) {
-        return (lang == LANG_DE) ? "Waage tarieren" : (lang == LANG_ZH) ? "清零秤" : "Tare Scale";
+    if (strcmp(key, "TARE_BTN") == 0) {
+        return (lang == LANG_DE) ? "Tarieren" : (lang == LANG_ZH) ? "去皮" : "Tare";
     }
-    if (strcmp(key, "SCALE_CAL_BTN") == 0) {
-        return (lang == LANG_DE) ? "Waage kalibrieren" : (lang == LANG_ZH) ? "校准秤" : "Calibrate Scale";
+    if (strcmp(key, "CALIBRATE_BTN") == 0) {
+        return (lang == LANG_DE) ? "Kalibrieren" : (lang == LANG_ZH) ? "校准" : "Calibrate";
     }
-    if (strcmp(key, "SCALE_WS_CONNECTED") == 0) {
-        return (lang == LANG_DE) ? "Waage verbunden über WebSocket" : (lang == LANG_ZH) ? "秤已通过 WebSocket 连接" : "Scale connected via WebSocket";
-    }
-    if (strcmp(key, "SCALE_WS_DISCONNECTED") == 0) {
-        return (lang == LANG_DE) ? "Waage-Verbindung verloren. Wiederaufbau..." : (lang == LANG_ZH) ? "秤连接丢失。正在重连..." : "Scale connection lost. Reconnecting...";
-    }
-    if (strcmp(key, "ACTION_SUCCESS") == 0) {
-        return (lang == LANG_DE) ? "Aktion erfolgreich" : (lang == LANG_ZH) ? "操作成功" : "Action successful";
-    }
-    if (strcmp(key, "ACTION_ERROR") == 0) {
-        return (lang == LANG_DE) ? "Fehler bei der Aktion" : (lang == LANG_ZH) ? "操作错误" : "Error while performing action";
-    }
-    
-    // upgrade.html
-    if (strcmp(key, "UPGRADE_TITLE") == 0) {
-        return (lang == LANG_DE) ? "Firmware-Update" : (lang == LANG_ZH) ? "固件升级" : "Firmware Upgrade";
-    }
-    if (strcmp(key, "UPGRADE_FILE_LABEL") == 0) {
-        return (lang == LANG_DE) ? "Firmware-Datei" : (lang == LANG_ZH) ? "固件文件" : "Firmware File";
-    }
-    if (strcmp(key, "UPGRADE_CHOOSE_BTN") == 0) {
-        return (lang == LANG_DE) ? "Datei wählen" : (lang == LANG_ZH) ? "选择文件" : "Choose File";
-    }
-    if (strcmp(key, "UPGRADE_NO_FILE") == 0) {
-        return (lang == LANG_DE) ? "Keine Datei ausgewählt" : (lang == LANG_ZH) ? "未选择文件" : "No file selected";
-    }
-    if (strcmp(key, "UPGRADE_BTN") == 0) {
-        return (lang == LANG_DE) ? "Firmware aktualisieren" : (lang == LANG_ZH) ? "更新固件" : "Update Firmware";
-    }
-    if (strcmp(key, "UPGRADE_FAIL_PREFIX") == 0) {
-        return (lang == LANG_DE) ? "Update fehlgeschlagen: " : (lang == LANG_ZH) ? "更新失败：" : "Update failed: ";
-    }
-    
+
     // wifi.html
     if (strcmp(key, "WIFI_TITLE") == 0) {
-        return (lang == LANG_DE) ? "WiFi-Konfiguration" : (lang == LANG_ZH) ? "WiFi 配置" : "WiFi Configuration";
+        return (lang == LANG_DE) ? "Wi-Fi" : (lang == LANG_ZH) ? "无线网络" : "Wi-Fi";
     }
-    if (strcmp(key, "WIFI_DESC") == 0) {
-        return (lang == LANG_DE) ? "Verbindungsstatus und Netzwerk-Management." : (lang == LANG_ZH) ? "连接状态和网络管理。" : "Connection status and network management.";
-    }
-    if (strcmp(key, "WIFI_SSID_LABEL") == 0) {
-        return (lang == LANG_DE) ? "Aktuelle SSID" : (lang == LANG_ZH) ? "当前 SSID" : "Current SSID";
-    }
-    if (strcmp(key, "WIFI_NOT_CONNECTED") == 0) {
-        return (lang == LANG_DE) ? "Nicht verbunden" : (lang == LANG_ZH) ? "未连接" : "Not connected";
-    }
-    if (strcmp(key, "WIFI_CONNECT_BTN") == 0) {
-        return (lang == LANG_DE) ? "Verbinden" : (lang == LANG_ZH) ? "连接" : "Connect";
-    }
-    if (strcmp(key, "WIFI_DISCONNECT_BTN") == 0) {
-        return (lang == LANG_DE) ? "Trennen" : (lang == LANG_ZH) ? "断开" : "Disconnect";
-    }
-    if (strcmp(key, "WIFI_SCAN_BTN") == 0) {
+    if (strcmp(key, "WIFI_SCAN") == 0) {
         return (lang == LANG_DE) ? "Netzwerke scannen" : (lang == LANG_ZH) ? "扫描网络" : "Scan Networks";
     }
-    
+
+    // upgrade.html
+    if (strcmp(key, "UPGRADE_TITLE") == 0) {
+        return (lang == LANG_DE) ? "Firmware Update" : (lang == LANG_ZH) ? "固件更新" : "Firmware Update";
+    }
+
     return "";
 }
 
