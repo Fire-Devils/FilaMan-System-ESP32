@@ -35,15 +35,15 @@
 
         <main class="fm-main">
             <header>
-                <h1>Welcome to FilaMan</h1>
-                <p>Your smart solution for <strong>Filament Management</strong> in 3D printing.</p>
+                <h1 data-lang-key="WELCOME_TITLE">Welcome to FilaMan</h1>
+                <p>Your smart solution for <strong data-lang-key="WELCOME_SUBTITLE_2">Filament Management</strong> in 3D printing.</p>
             </header>
 
             <div class="fm-card" style="border-color: var(--accent-3); background: rgba(247, 200, 106, 0.05);">
-                <h3 style="color: var(--accent-3);">System Compatibility</h3>
+                <h3 style="color: var(--accent-3);" data-lang-key="CARD_COMPAT_TITLE">System Compatibility</h3>
                 <p>
-                    Starting with <strong>Version 3.0.0</strong>, this scale is exclusively designed for use with the 
-                    <a href="https://github.com/Fire-Devils/filaman-system" target="_blank" style="color: var(--accent-2); text-decoration: underline;">FilaMan-System</a>.
+                    Starting with <strong data-lang-key="COMPAT_TEXT_2">Version 3.0.0</strong>, this scale is exclusively designed for use with the 
+                    <a href="https://github.com/Fire-Devils/filaman-system" target="_blank" style="color: var(--accent-2); text-decoration: underline;" data-lang-key="COMPAT_TEXT_4">FilaMan-System</a>.
                 </p>
             </div>
 
@@ -59,15 +59,15 @@
             <div class="features-grid">
                 <div class="fm-card fm-card-hover">
                     <h3>Spool Identification</h3>
-                    <p>Easily identify filament spools using NFC tags for instant tracking.</p>
+                    <p data-lang-key="FEATURE_TRACKING_DESC">Easily identify filament spools using NFC tags for instant tracking.</p>
                 </div>
                 <div class="fm-card fm-card-hover">
                     <h3>Automatic Sync</h3>
-                    <p>Seamlessly update spool data with the FilaMan API for accurate tracking.</p>
+                    <p data-lang-key="FEATURE_SYNC_DESC">Seamlessly update spool data with the FilaMan API for accurate tracking.</p>
                 </div>
                 <div class="fm-card fm-card-hover">
                     <h3>Scale Integration</h3>
-                    <p>Built-in scale support for precise remaining weight calculation.</p>
+                    <p data-lang-key="FEATURE_WEIGH_DESC">Built-in scale support for precise remaining weight calculation.</p>
                 </div>
             </div>
         </main>
@@ -100,5 +100,27 @@
         connectWebSocket();
         setInterval(() => { if(ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type:'heartbeat'})); }, 5000);
     </script>
+
+<script>
+// 国际化支持
+document.addEventListener('DOMContentLoaded', async function() {
+    try {
+        const response = await fetch('/api/lang-strings');
+        const data = await response.json();
+        
+        if (data && data.strings) {
+            document.querySelectorAll('[data-lang-key]').forEach(el => {
+                const key = el.getAttribute('data-lang-key');
+                if (data.strings[key]) {
+                    el.textContent = data.strings[key];
+                }
+            });
+        }
+    } catch (e) {
+        console.error('Lang load failed:', e);
+    }
+});
+</script>
+
 </body>
 </html>

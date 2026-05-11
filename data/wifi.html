@@ -35,8 +35,8 @@
 
         <main class="fm-main">
             <header>
-                <h1>WiFi Configuration</h1>
-                <p>Connection status and network management.</p>
+                <h1 data-lang-key="WIFI_TITLE">WiFi Configuration</h1>
+                <p data-lang-key="WIFI_DESC">Connection status and network management.</p>
             </header>
 
             <div class="fm-card">
@@ -80,5 +80,27 @@
         connectWebSocket();
         setInterval(() => { if(ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type:'heartbeat'})); }, 5000);
     </script>
+
+<script>
+// 国际化支持
+document.addEventListener('DOMContentLoaded', async function() {
+    try {
+        const response = await fetch('/api/lang-strings');
+        const data = await response.json();
+        
+        if (data && data.strings) {
+            document.querySelectorAll('[data-lang-key]').forEach(el => {
+                const key = el.getAttribute('data-lang-key');
+                if (data.strings[key]) {
+                    el.textContent = data.strings[key];
+                }
+            });
+        }
+    } catch (e) {
+        console.error('Lang load failed:', e);
+    }
+});
+</script>
+
 </body>
 </html>

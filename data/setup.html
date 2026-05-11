@@ -35,12 +35,12 @@
 
         <main class="fm-main">
             <header>
-                <h1>Device Setup</h1>
+                <h1 data-lang-key="SETUP_TITLE">Device Setup</h1>
                 <p>Register your device to connect it with your FilaMan-System account.</p>
             </header>
 
             <div class="fm-card">
-                <h2>System Registration</h2>
+                <h2 data-lang-key="REGISTER_TITLE">System Registration</h2>
                 <p>Current Status: <strong style="color: var(--accent);">%registered%</strong></p>
                 
                 <div class="fm-form-group" style="margin-top: 2rem;">
@@ -54,7 +54,7 @@
                     <p style="font-size: 0.8rem; margin-top: 0.5rem;">Enter the 6-digit code shown in your FilaMan Dashboard.</p>
                 </div>
                 
-                <button id="registerBtn" class="fm-btn fm-btn-primary">Register Device</button>
+                <button id="registerBtn" class="fm-btn fm-btn-primary" data-lang-key="REGISTER_BTN">Register Device</button>
                 <div id="statusMessage" style="margin-top: 1.5rem;"></div>
             </div>
 
@@ -62,7 +62,7 @@
                 <h2>General Settings</h2>
                 
                 <div class="fm-form-group" style="margin-top: 1rem;">
-                    <label class="fm-label" for="languageSelect">Display Language</label>
+                    <label class="fm-label" for="languageSelect" data-lang-key="DISPLAY_LANG_LABEL">Display Language</label>
                     <select id="languageSelect" class="fm-input">
                         <option value="en">English</option>
                         <option value="de">Deutsch</option>
@@ -72,10 +72,10 @@
             </div>
 
             <div class="fm-card">
-                <h2>Display Settings</h2>
+                <h2 data-lang-key="DISPLAY_TITLE">Display Settings</h2>
 
                 <div class="fm-form-group" style="margin-top: 1rem;">
-                    <label class="fm-label" for="sleepTimeoutSelect">OLED Sleep Timeout</label>
+                    <label class="fm-label" for="sleepTimeoutSelect" data-lang-key="DISPLAY_SLEEP_LABEL">OLED Sleep Timeout</label>
                     <select id="sleepTimeoutSelect" class="fm-input">
                         <option value="0">Disabled (always on)</option>
                         <option value="30">30 seconds</option>
@@ -215,5 +215,27 @@
         connectWebSocket();
         setInterval(() => { if(ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type:'heartbeat'})); }, 5000);
     </script>
+
+<script>
+// 国际化支持
+document.addEventListener('DOMContentLoaded', async function() {
+    try {
+        const response = await fetch('/api/lang-strings');
+        const data = await response.json();
+        
+        if (data && data.strings) {
+            document.querySelectorAll('[data-lang-key]').forEach(el => {
+                const key = el.getAttribute('data-lang-key');
+                if (data.strings[key]) {
+                    el.textContent = data.strings[key];
+                }
+            });
+        }
+    } catch (e) {
+        console.error('Lang load failed:', e);
+    }
+});
+</script>
+
 </body>
 </html>

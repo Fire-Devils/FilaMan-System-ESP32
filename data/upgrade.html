@@ -35,7 +35,7 @@
 
         <main class="fm-main">
             <header>
-                <h1>Firmware Upgrade</h1>
+                <h1 data-lang-key="UPGRADE_TITLE">Firmware Upgrade</h1>
                 <p>Keep your device up to date with the latest features and security improvements.</p>
             </header>
 
@@ -153,5 +153,27 @@
         document.getElementById('firmwareForm').addEventListener('submit', handleUpdate);
         document.getElementById('webpageForm').addEventListener('submit', handleUpdate);
     </script>
+
+<script>
+// 国际化支持
+document.addEventListener('DOMContentLoaded', async function() {
+    try {
+        const response = await fetch('/api/lang-strings');
+        const data = await response.json();
+        
+        if (data && data.strings) {
+            document.querySelectorAll('[data-lang-key]').forEach(el => {
+                const key = el.getAttribute('data-lang-key');
+                if (data.strings[key]) {
+                    el.textContent = data.strings[key];
+                }
+            });
+        }
+    } catch (e) {
+        console.error('Lang load failed:', e);
+    }
+});
+</script>
+
 </body>
 </html>
