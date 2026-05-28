@@ -2183,16 +2183,48 @@ void scanRfidTask(void * parameter) {
         }
         else
         {
-          // UID length != 7, might be a Mifare Classic (Bambu tags)
-          Serial.println("Not a standard NTAG (UID length != 7), trying Bambu Lab tag...");
-          if (!detectBambuTag(uid, uidLength)) {
-            //TBD: Show error here?!
-            oledShowProgressBar(1, 1, tr(STR_FAILURE), tr(STR_UNKNOWN_TAG_TYPE));
-            oledSetPriority(DISPLAY_PRIORITY_WARNING, 2000);
-            Serial.println("This doesn't seem to be an NTAG2xx tag (UUID length != 7 bytes)!");
-            // Reset activeSpoolId when tag type is unknown to prevent autoSet
-            activeSpoolId = "";
-            Serial.println("Unknown tag type - activeSpoolId reset to prevent autoSet");
+          // UID length != 7 — could be Mifare Classic (BambuLab) or non-standard NTAG.
+          // Try NTAG-style NDEF read first to check for openspool/filaman protocol.
+          Serial.println("UID length != 7, checking for openspool/filaman protocol first...");
+          activeTagUuid = uidString;
+
+          bool handledAsNdef = false;
+          uint16_t tagSize = readTagSize();
+          if (tagSize > 0)
+          {
+            uint8_t* data = (uint8_t*)malloc(tagSize);
+            memset(data, 0, tagSize);
+            uint8_t numPages = tagSize / 4;
+            for (uint8_t i = 4; i < 4 + numPages; i++) {
+              if (!robustPageRead(i, data + (i - 4) * 4)) {
+                Serial.printf("Page %d read failed, stopping\n", i);
+                break;
+              }
+              if (data[(i - 4) * 4] == 0xFE) {
+                Serial.println("Found NDEF end marker");
+                break;
+              }
+              yield();
+              esp_task_wdt_reset();
+              vTaskDelay(pdMS_TO_TICKS(2));
+            }
+            if (decodeNdefAndReturnJson(data, uidString)) {
+              handledAsNdef = true;
+              nfcReaderState = NFC_READ_SUCCESS;
+            }
+            free(data);
+          }
+
+          if (!handledAsNdef)
+          {
+            Serial.println("No NDEF/openspool protocol found, trying Bambu Lab tag...");
+            if (!detectBambuTag(uid, uidLength)) {
+              oledShowProgressBar(1, 1, tr(STR_FAILURE), tr(STR_UNKNOWN_TAG_TYPE));
+              oledSetPriority(DISPLAY_PRIORITY_WARNING, 2000);
+              Serial.println("This doesn't seem to be an NTAG2xx tag (UUID length != 7 bytes)!");
+              activeSpoolId = "";
+              Serial.println("Unknown tag type - activeSpoolId reset to prevent autoSet");
+            }
           }
         }
       }
