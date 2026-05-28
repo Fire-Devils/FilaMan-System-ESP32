@@ -28,9 +28,33 @@ volatile bool nfcReadingTaskSuspendRequest = false;
 volatile bool nfcReadingTaskSuspendState = false;
 volatile bool nfcWriteInProgress = false; // Prevent any tag operations during write
 volatile bool scanRequestActive = false;  // Set by website when frontend requests a tag scan
+unsigned long scanRequestStartedAtMs = 0;
+const unsigned long SCAN_REQUEST_TIMEOUT_MS = 30000;
+
+void sendScanRequestErrorToBackend(const char* errorMessage) {
+    if (!scanRequestActive) {
+        return;
+    }
+
+    JsonDocument doc;
+    doc["scan_status"] = "error";
+    doc["error_message"] = errorMessage;
+    doc["source"] = "rfid_scan_request";
+
+    String payload;
+    serializeJson(doc, payload);
+    sendTagDataAsync(payload);
+    scanRequestActive = false;
+    scanRequestStartedAtMs = 0;
+}
 
 void setScanRequest(bool active) {
     scanRequestActive = active;
+    if (active) {
+        scanRequestStartedAtMs = millis();
+    } else {
+        scanRequestStartedAtMs = 0;
+    }
 }
 
 volatile nfcReaderStateType nfcReaderState = NFC_IDLE;
@@ -1322,10 +1346,16 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
       Serial.println("JSON-Dokument erfolgreich verarbeitet");
       if (doc["sm_id"].is<String>() && doc["sm_id"] != "" && doc["sm_id"] != "0")
       {
-        oledShowProgressBar(2, 4, tr(STR_SPOOL_TAG), tr(STR_WEIGHING));
-        oledSetPriority(DISPLAY_PRIORITY_ACTION, 2000);
-        activeSpoolId = doc["sm_id"].as<String>();
-        lastSpoolId = activeSpoolId;
+        if (scanRequestActive) {
+          scanRequestActive = false;
+          sendTagDataAsync(nfcJsonData);
+          tagProcessed = true;
+        } else {
+          oledShowProgressBar(2, 4, tr(STR_SPOOL_TAG), tr(STR_WEIGHING));
+          oledSetPriority(DISPLAY_PRIORITY_ACTION, 2000);
+          activeSpoolId = doc["sm_id"].as<String>();
+          lastSpoolId = activeSpoolId;
+        }
       }
 
       else if(doc["location_id"].is<int>())
@@ -2054,6 +2084,11 @@ void scanRfidTask(void * parameter) {
     // Regular watchdog reset
     esp_task_wdt_reset();
     yield();
+
+    if (scanRequestActive && scanRequestStartedAtMs > 0 && (millis() - scanRequestStartedAtMs) > SCAN_REQUEST_TIMEOUT_MS) {
+      Serial.println("RFID scan-request timeout reached without tag");
+      sendScanRequestErrorToBackend("Timeout - no tag found");
+    }
 
     // Skip scanning during write operations, but keep NFC interface active
     if (nfcReaderState != NFC_WRITING && !nfcWriteInProgress && !nfcReadingTaskSuspendRequest && !booting)
