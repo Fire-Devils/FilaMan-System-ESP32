@@ -28,6 +28,7 @@ void scanRfidTask(void * parameter);
 void startWriteJsonToTag(const bool isSpoolTag, const char* payload, int spoolId = 0, int locationId = 0);
 bool quickSpoolIdCheck(String uidString);
 bool readCompleteJsonForFastPath(); // Read complete JSON data for fast-path web interface display
+void setScanRequest(bool active);
 
 extern TaskHandle_t RfidReaderTask;
 extern String nfcJsonData;
@@ -36,6 +37,7 @@ extern String activeTagUuid;
 extern String lastSpoolId;
 extern volatile nfcReaderStateType nfcReaderState;
 extern volatile bool nfcWriteInProgress;
+extern volatile bool scanRequestActive;
 extern bool tagProcessed;
 extern bool isBambuTag;
 

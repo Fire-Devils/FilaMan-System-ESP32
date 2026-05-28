@@ -285,6 +285,11 @@ void setupWebserver(AsyncWebServer &server) {
         request->send(200, "application/json", "{\"success\": true}");
     });
 
+    server.on("/api/v1/rfid/scan-request", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+        setScanRequest(true);
+        request->send(200, "application/json", "{\"success\": true}");
+    });
+
     server.on("/reboot", HTTP_GET, [](AsyncWebServerRequest *request){
         request->send(200, "text/plain", "Rebooting...");
         delay(500);

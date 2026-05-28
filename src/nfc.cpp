@@ -27,6 +27,11 @@ bool isBambuTag = false;
 volatile bool nfcReadingTaskSuspendRequest = false;
 volatile bool nfcReadingTaskSuspendState = false;
 volatile bool nfcWriteInProgress = false; // Prevent any tag operations during write
+volatile bool scanRequestActive = false;  // Set by website when frontend requests a tag scan
+
+void setScanRequest(bool active) {
+    scanRequestActive = active;
+}
 
 volatile nfcReaderStateType nfcReaderState = NFC_IDLE;
 // 0 = nicht gelesen
@@ -1362,8 +1367,14 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
         String displayText = brand.length() > 0 ? (brand + " " + type) : type;
         Serial.println("Extended-data tag: protocol=" + protocolStr + " type=" + type + " brand=" + brand);
         activeSpoolId = ""; // Keine sm_id → Gewicht wird mit tag_uuid gesendet
-        oledShowProgressBar(2, 4, tr(STR_SPOOL_TAG), displayText.c_str());
-        oledSetPriority(DISPLAY_PRIORITY_ACTION, 2000);
+        if (scanRequestActive) {
+            scanRequestActive = false;
+            sendTagDataAsync(nfcJsonData);
+            tagProcessed = true;
+        } else {
+            oledShowProgressBar(2, 4, tr(STR_SPOOL_TAG), displayText.c_str());
+            oledSetPriority(DISPLAY_PRIORITY_ACTION, 2000);
+        }
       }
       else
       {
