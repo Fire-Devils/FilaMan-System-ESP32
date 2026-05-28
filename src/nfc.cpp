@@ -2107,7 +2107,8 @@ void scanRfidTask(void * parameter) {
         {
           activeTagUuid = uidString;
           // Try fast-path detection first for known spools
-          if (quickSpoolIdCheck(uidString)) {
+          // Skip fast-path when a scan request is active — full NDEF read needed to send tag data
+          if (!scanRequestActive && quickSpoolIdCheck(uidString)) {
               Serial.println("✓ FAST-PATH: Tag processed quickly, skipping full read");
               // Set reader back to idle for next scan
               nfcReaderState = NFC_READ_SUCCESS;
