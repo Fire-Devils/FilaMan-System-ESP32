@@ -1350,6 +1350,21 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
         tagProcessed = true;
         activeSpoolId = "";
       }
+      else if (doc["protocol"].is<String>() &&
+               (doc["protocol"].as<String>() == "openspool" ||
+                doc["protocol"].as<String>() == "filaman"))
+      {
+        // Tag mit erweitertem Protokoll (OpenSpool/FilaMan) aber ohne sm_id.
+        // FilaMan sucht die Spule anhand der tag_uuid (rfid_uid).
+        String protocolStr = doc["protocol"].as<String>();
+        String type  = doc["type"]  | "?";
+        String brand = doc["brand"] | "";
+        String displayText = brand.length() > 0 ? (brand + " " + type) : type;
+        Serial.println("Extended-data tag: protocol=" + protocolStr + " type=" + type + " brand=" + brand);
+        activeSpoolId = ""; // Keine sm_id → Gewicht wird mit tag_uuid gesendet
+        oledShowProgressBar(2, 4, tr(STR_SPOOL_TAG), displayText.c_str());
+        oledSetPriority(DISPLAY_PRIORITY_ACTION, 2000);
+      }
       else
       {
         Serial.println("Unbekannter Tag-Inhalt.");
