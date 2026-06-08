@@ -3,6 +3,8 @@
 
 #include <Arduino.h>
 #include "HX711.h"
+// Board-specific pin definitions
+#include "board_config.h"
 
 uint8_t setAutoTare(bool autoTareValue);
 void start_scale(bool touchSensorConnected);

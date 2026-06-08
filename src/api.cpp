@@ -10,6 +10,7 @@
 #include <WiFi.h>
 #include "display.h"
 #include "lang.h"
+#include "wlan.h"
 
 volatile filamanApiStateType filamanApiState = API_IDLE;
 bool filamanConnected = false;
@@ -78,7 +79,7 @@ bool registerDevice(const String& deviceCode) {
 }
 
 bool sendHeartbeat() {
-    if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
+    if (!checkFilamanRegistration() || !networkConnected()) return false;
     HTTPClient http;
     http.setTimeout(10000);  // 10s statt 3s - wichtig für instabile Verbindungen
     http.setReuse(true);     // Keep-Alive aktivieren für bessere Performance
@@ -87,7 +88,7 @@ bool sendHeartbeat() {
     http.addHeader("Authorization", "Device " + filamanToken);
     http.addHeader("Connection", "keep-alive");  // Explizit Keep-Alive anfordern
     JsonDocument doc;
-    doc["ip_address"] = WiFi.localIP().toString();
+    doc["ip_address"] = getLocalIP();
     String payload;
     serializeJson(doc, payload);
     int httpCode = http.POST(payload);
@@ -113,8 +114,8 @@ bool sendHeartbeatWithRetry(int maxRetries = 2) {
 
 bool sendWeight(int spoolId, String tagUuid, float measuredWeight) {
     Serial.printf("sendWeight: sending to API - spoolId=%d, tagUuid=%s, weight=%.1f\n", spoolId, tagUuid.c_str(), measuredWeight);
-    if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) {
-        Serial.println("ERROR: Not registered or WiFi not connected");
+    if (!checkFilamanRegistration() || !networkConnected()) {
+        Serial.println("ERROR: Not registered or network not connected");
         return false;
     }
     HTTPClient http;
@@ -163,7 +164,7 @@ bool sendWeight(int spoolId, String tagUuid, float measuredWeight) {
 }
 
 bool sendLocation(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid) {
-    if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
+    if (!checkFilamanRegistration() || !networkConnected()) return false;
     HTTPClient http;
     http.setTimeout(10000);  // 10s Timeout
     http.setReuse(true);
@@ -184,7 +185,7 @@ bool sendLocation(int spoolId, String spoolTagUuid, int locationId, String locat
 }
 
 bool sendRfidResult(String tagUuid, int spoolId, int locationId, bool success, String errorMessage, float remainingWeight) {
-    if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
+    if (!checkFilamanRegistration() || !networkConnected()) return false;
     HTTPClient http;
     http.setTimeout(10000);  // 10s Timeout
     http.setReuse(true);
