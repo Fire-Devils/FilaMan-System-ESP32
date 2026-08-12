@@ -1344,7 +1344,8 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
   {
     if(filamanConnected){
       Serial.println("JSON-Dokument erfolgreich verarbeitet");
-      if (doc["sm_id"].is<String>() && doc["sm_id"] != "" && doc["sm_id"] != "0")
+      String idKey = doc["spool_id"].is<String>() ? "spool_id" : "sm_id";
+      if (doc[idKey].is<String>() && doc[idKey] != "" && doc[idKey] != "0")
       {
         if (scanRequestActive) {
           scanRequestActive = false;
@@ -1353,7 +1354,7 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
         } else {
           oledShowProgressBar(2, 4, tr(STR_SPOOL_TAG), tr(STR_WEIGHING));
           oledSetPriority(DISPLAY_PRIORITY_ACTION, 2000);
-          activeSpoolId = doc["sm_id"].as<String>();
+          activeSpoolId = doc[idKey].as<String>();
           lastSpoolId = activeSpoolId;
         }
       }
@@ -1389,14 +1390,14 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
                (doc["protocol"].as<String>() == "openspool" ||
                 doc["protocol"].as<String>() == "filaman"))
       {
-        // Tag mit erweitertem Protokoll (OpenSpool/FilaMan) aber ohne sm_id.
+        // Tag mit erweitertem Protokoll (OpenSpool/FilaMan) aber ohne spool_id/sm_id.
         // FilaMan sucht die Spule anhand der tag_uuid (rfid_uid).
         String protocolStr = doc["protocol"].as<String>();
         String type  = doc["type"]  | "?";
         String brand = doc["brand"] | "";
         String displayText = brand.length() > 0 ? (brand + " " + type) : type;
         Serial.println("Extended-data tag: protocol=" + protocolStr + " type=" + type + " brand=" + brand);
-        activeSpoolId = ""; // Keine sm_id → Gewicht wird mit tag_uuid gesendet
+        activeSpoolId = ""; // Keine spool_id/sm_id → Gewicht wird mit tag_uuid gesendet
         if (scanRequestActive) {
             scanRequestActive = false;
             sendTagDataAsync(nfcJsonData);
@@ -1489,7 +1490,7 @@ bool quickSpoolIdCheck(String uidString) {
         return false;
     }
 
-    Serial.println("=== FAST-PATH: Quick sm_id Check ===");
+    Serial.println("=== FAST-PATH: Quick spool_id Check ===");
 
     // Read enough pages to cover NDEF header + beginning of payload (pages 4-8 = 20 bytes)
     uint8_t ndefData[20];
@@ -1598,17 +1599,23 @@ bool quickSpoolIdCheck(String uidString) {
         Serial.print("JSON start from extended read: ");
         Serial.println(jsonStart);
 
-        // Check for sm_id pattern - look for non-zero sm_id values
-        if (jsonStart.indexOf("\"sm_id\":\"") >= 0) {
-            int smIdStart = jsonStart.indexOf("\"sm_id\":\"") + 9;
+        // Check for spool_id/sm_id pattern - look for non-zero id values
+        String idPattern = "\"spool_id\":\"";
+        int idPatternPos = jsonStart.indexOf(idPattern);
+        if (idPatternPos < 0) {
+            idPattern = "\"sm_id\":\"";
+            idPatternPos = jsonStart.indexOf(idPattern);
+        }
+        if (idPatternPos >= 0) {
+            int smIdStart = idPatternPos + idPattern.length();
             int smIdEnd = jsonStart.indexOf("\"", smIdStart);
 
             if (smIdEnd > smIdStart && smIdEnd < jsonStart.length()) {
                 String quickSpoolId = jsonStart.substring(smIdStart, smIdEnd);
-                Serial.print("Found sm_id in extended read: ");
+                Serial.print("Found spool_id/sm_id in extended read: ");
                 Serial.println(quickSpoolId);
 
-                // Only process if sm_id is not "0" (known spool)
+                // Only process if id is not "0" (known spool)
                 if (quickSpoolId != "0" && quickSpoolId.length() > 0) {
                     Serial.println("✓ FAST-PATH: Known spool detected!");
 
@@ -1629,13 +1636,13 @@ bool quickSpoolIdCheck(String uidString) {
                     Serial.println("✓ FAST-PATH SUCCESS: Known spool processed quickly");
                     return true;
                 } else {
-                    Serial.println("✗ FAST-PATH: sm_id is 0 - new brand filament, need full read");
+                    Serial.println("✗ FAST-PATH: spool_id/sm_id is 0 - new brand filament, need full read");
                     return false;
                 }
             }
         }
 
-        Serial.println("✗ FAST-PATH: No sm_id pattern in extended read");
+        Serial.println("✗ FAST-PATH: No spool_id/sm_id pattern in extended read");
         return false;
     }
 
@@ -1651,20 +1658,26 @@ bool quickSpoolIdCheck(String uidString) {
     Serial.print("Quick JSON data: ");
     Serial.println(quickJson);
 
-    // Look for sm_id pattern in the beginning of JSON - check for known vs new spools
-    if (quickJson.indexOf("\"sm_id\":\"") >= 0) {
-        Serial.println("✓ FAST-PATH: sm_id field found");
+    // Look for spool_id/sm_id pattern in the beginning of JSON - check for known vs new spools
+    String idPattern2 = "\"spool_id\":\"";
+    int idPattern2Pos = quickJson.indexOf(idPattern2);
+    if (idPattern2Pos < 0) {
+        idPattern2 = "\"sm_id\":\"";
+        idPattern2Pos = quickJson.indexOf(idPattern2);
+    }
+    if (idPattern2Pos >= 0) {
+        Serial.println("✓ FAST-PATH: spool_id/sm_id field found");
 
-        // Extract sm_id from quick data
-        int smIdStart = quickJson.indexOf("\"sm_id\":\"") + 9;
+        // Extract id from quick data
+        int smIdStart = idPattern2Pos + idPattern2.length();
         int smIdEnd = quickJson.indexOf("\"", smIdStart);
 
         if (smIdEnd > smIdStart && smIdEnd < quickJson.length()) {
             String quickSpoolId = quickJson.substring(smIdStart, smIdEnd);
-            Serial.print("✓ Quick extracted sm_id: ");
+            Serial.print("✓ Quick extracted spool_id/sm_id: ");
             Serial.println(quickSpoolId);
 
-            // Only process known spools (sm_id != "0") via fast path
+            // Only process known spools (id != "0") via fast path
             if (quickSpoolId != "0" && quickSpoolId.length() > 0) {
                 Serial.println("✓ FAST-PATH: Known spool detected!");
 
@@ -1685,12 +1698,12 @@ bool quickSpoolIdCheck(String uidString) {
                 Serial.println("✓ FAST-PATH SUCCESS: Known spool processed quickly");
                 return true;
             } else {
-                Serial.println("✗ FAST-PATH: sm_id is 0 - new brand filament, need full read");
-                return false; // sm_id="0" means new brand filament, needs full processing
+                Serial.println("✗ FAST-PATH: spool_id/sm_id is 0 - new brand filament, need full read");
+                return false; // id="0" means new brand filament, needs full processing
             }
         } else {
-            Serial.println("✗ FAST-PATH: Could not extract complete sm_id value");
-            return false; // Need full read to get complete sm_id
+            Serial.println("✗ FAST-PATH: Could not extract complete spool_id/sm_id value");
+            return false; // Need full read to get complete id
         }
     }
 
@@ -1941,7 +1954,7 @@ void writeJsonToTag(void *parameter) {
   vTaskDelete(NULL);
 }
 
-// Ensures sm_id is always the first key in JSON for fast-path detection
+// Ensures spool_id is always the first key in JSON for fast-path detection
 String optimizeJsonForFastPath(const char* payload) {
     JsonDocument inputDoc;
     DeserializationError error = deserializeJson(inputDoc, payload);
@@ -1952,26 +1965,26 @@ String optimizeJsonForFastPath(const char* payload) {
         return String(payload); // Return original if parsing fails
     }
 
-    // Create optimized JSON with sm_id first
+    // Create optimized JSON with spool_id first
     JsonDocument optimizedDoc;
 
-    // Always add sm_id first (even if it's "0" for brand filaments)
-    // Also convert spool_id to sm_id if present (backend may send either)
-    if (inputDoc["sm_id"].is<String>() && inputDoc["sm_id"].as<String>() != "0" && inputDoc["sm_id"].as<String>() != "") {
-        optimizedDoc["sm_id"] = inputDoc["sm_id"].as<String>();
-        Serial.print("Optimizing JSON: sm_id found = ");
-        Serial.println(inputDoc["sm_id"].as<String>());
-    } else if (inputDoc["spool_id"].is<int>() && inputDoc["spool_id"].as<int>() > 0) {
-        optimizedDoc["sm_id"] = String(inputDoc["spool_id"].as<int>());
-        Serial.print("Optimizing JSON: Converted spool_id to sm_id = ");
+    // Always add spool_id first (even if it's "0" for brand filaments)
+    // Accept legacy sm_id as input too, but always emit spool_id
+    if (inputDoc["spool_id"].is<int>() && inputDoc["spool_id"].as<int>() > 0) {
+        optimizedDoc["spool_id"] = String(inputDoc["spool_id"].as<int>());
+        Serial.print("Optimizing JSON: spool_id found = ");
         Serial.println(inputDoc["spool_id"].as<int>());
     } else if (inputDoc["spool_id"].is<String>() && inputDoc["spool_id"].as<String>() != "0" && inputDoc["spool_id"].as<String>() != "") {
-        optimizedDoc["sm_id"] = inputDoc["spool_id"].as<String>();
-        Serial.print("Optimizing JSON: Converted spool_id (string) to sm_id = ");
+        optimizedDoc["spool_id"] = inputDoc["spool_id"].as<String>();
+        Serial.print("Optimizing JSON: spool_id found = ");
         Serial.println(inputDoc["spool_id"].as<String>());
+    } else if (inputDoc["sm_id"].is<String>() && inputDoc["sm_id"].as<String>() != "0" && inputDoc["sm_id"].as<String>() != "") {
+        optimizedDoc["spool_id"] = inputDoc["sm_id"].as<String>();
+        Serial.print("Optimizing JSON: Converted legacy sm_id to spool_id = ");
+        Serial.println(inputDoc["sm_id"].as<String>());
     } else {
-        optimizedDoc["sm_id"] = "0"; // Default for brand filaments
-        Serial.println("Optimizing JSON: No sm_id or spool_id found, setting sm_id to '0'");
+        optimizedDoc["spool_id"] = "0"; // Default for brand filaments
+        Serial.println("Optimizing JSON: No spool_id or sm_id found, setting spool_id to '0'");
     }
 
     for (JsonPair kv : inputDoc.as<JsonObject>()) {
@@ -2005,7 +2018,7 @@ void startWriteJsonToTag(const bool isSpoolTag, const char* payload, int spoolId
     return;
   }
 
-  // Optimize JSON to ensure sm_id is first key for fast-path detection
+  // Optimize JSON to ensure spool_id is first key for fast-path detection
   String optimizedPayload = optimizeJsonForFastPath(payload);
 
   NfcWriteParameterType* parameters = new NfcWriteParameterType();
