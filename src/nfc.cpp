@@ -532,6 +532,11 @@ uint8_t ntag2xx_WriteNDEF(const char *payload) {
     Serial.println("1. Neuinitialisierung des PN532...");
 
     // Reinitialize the PN532
+    pinMode(PN532_RESET, OUTPUT);
+    digitalWrite(PN532_RESET, LOW);
+    delay(50);
+    digitalWrite(PN532_RESET, HIGH);
+    delay(200);
     nfc.begin();
     vTaskDelay(pdMS_TO_TICKS(500)); // Give it time to initialize
 
@@ -2228,7 +2233,12 @@ void scanRfidTask(void * parameter) {
 void startNfc() {
   nfcRequestMutex = xSemaphoreCreateMutex();
   oledShowProgressBar(4, NUM_SETUP_STEPS, DISPLAY_BOOT_TEXT, tr(STR_NFC_INIT));
-  nfc.begin();                                           // Beginne Kommunikation mit RFID Leser
+  pinMode(PN532_RESET, OUTPUT);
+  digitalWrite(PN532_RESET, LOW);
+  delay(50);
+  digitalWrite(PN532_RESET, HIGH);
+  delay(200);
+  nfc.begin();                                        // Beginne Kommunikation mit RFID Leser
 
   delay(1000);
   unsigned long versiondata = nfc.getFirmwareVersion();  // Lese Versionsnummer der Firmware aus
