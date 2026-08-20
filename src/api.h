@@ -17,7 +17,8 @@ typedef enum {
     API_REQUEST_HEARTBEAT,
     API_REQUEST_WEIGHT,
     API_REQUEST_LOCATE,
-    API_REQUEST_RFID_RESULT
+    API_REQUEST_RFID_RESULT,
+    API_REQUEST_TAG_DATA
 } FilamanApiRequestType;
 
 extern volatile filamanApiStateType filamanApiState;
@@ -30,6 +31,7 @@ void sendHeartbeatAsync();
 void sendWeightAsync(int spoolId, String tagUuid, float weight);
 void sendLocationAsync(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid);
 void sendRfidResultAsync(String tagUuid, int spoolId, int locationId, bool success, String errorMessage, float remainingWeight = 0);
+void sendTagDataAsync(String tagJson);
 
 // Internal blocking functions (used by async task)
 bool sendHeartbeat();

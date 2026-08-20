@@ -27,6 +27,35 @@ bool isBambuTag = false;
 volatile bool nfcReadingTaskSuspendRequest = false;
 volatile bool nfcReadingTaskSuspendState = false;
 volatile bool nfcWriteInProgress = false; // Prevent any tag operations during write
+volatile bool scanRequestActive = false;  // Set by website when frontend requests a tag scan
+unsigned long scanRequestStartedAtMs = 0;
+const unsigned long SCAN_REQUEST_TIMEOUT_MS = 30000;
+
+void sendScanRequestErrorToBackend(const char* errorMessage) {
+    if (!scanRequestActive) {
+        return;
+    }
+
+    JsonDocument doc;
+    doc["scan_status"] = "error";
+    doc["error_message"] = errorMessage;
+    doc["source"] = "rfid_scan_request";
+
+    String payload;
+    serializeJson(doc, payload);
+    sendTagDataAsync(payload);
+    scanRequestActive = false;
+    scanRequestStartedAtMs = 0;
+}
+
+void setScanRequest(bool active) {
+    scanRequestActive = active;
+    if (active) {
+        scanRequestStartedAtMs = millis();
+    } else {
+        scanRequestStartedAtMs = 0;
+    }
+}
 
 volatile nfcReaderStateType nfcReaderState = NFC_IDLE;
 // 0 = nicht gelesen
@@ -1315,12 +1344,19 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
   {
     if(filamanConnected){
       Serial.println("JSON-Dokument erfolgreich verarbeitet");
-      if (doc["sm_id"].is<String>() && doc["sm_id"] != "" && doc["sm_id"] != "0")
+      String idKey = doc["spool_id"].is<String>() ? "spool_id" : "sm_id";
+      if (doc[idKey].is<String>() && doc[idKey] != "" && doc[idKey] != "0")
       {
-        oledShowProgressBar(2, 4, tr(STR_SPOOL_TAG), tr(STR_WEIGHING));
-        oledSetPriority(DISPLAY_PRIORITY_ACTION, 2000);
-        activeSpoolId = doc["sm_id"].as<String>();
-        lastSpoolId = activeSpoolId;
+        if (scanRequestActive) {
+          scanRequestActive = false;
+          sendTagDataAsync(nfcJsonData);
+          tagProcessed = true;
+        } else {
+          oledShowProgressBar(2, 4, tr(STR_SPOOL_TAG), tr(STR_WEIGHING));
+          oledSetPriority(DISPLAY_PRIORITY_ACTION, 2000);
+          activeSpoolId = doc[idKey].as<String>();
+          lastSpoolId = activeSpoolId;
+        }
       }
 
       else if(doc["location_id"].is<int>())
@@ -1349,6 +1385,27 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
         // Mark as processed so main.cpp doesn't try to send weight
         tagProcessed = true;
         activeSpoolId = "";
+      }
+      else if (doc["protocol"].is<String>() &&
+               (doc["protocol"].as<String>() == "openspool" ||
+                doc["protocol"].as<String>() == "filaman"))
+      {
+        // Tag mit erweitertem Protokoll (OpenSpool/FilaMan) aber ohne spool_id/sm_id.
+        // FilaMan sucht die Spule anhand der tag_uuid (rfid_uid).
+        String protocolStr = doc["protocol"].as<String>();
+        String type  = doc["type"]  | "?";
+        String brand = doc["brand"] | "";
+        String displayText = brand.length() > 0 ? (brand + " " + type) : type;
+        Serial.println("Extended-data tag: protocol=" + protocolStr + " type=" + type + " brand=" + brand);
+        activeSpoolId = ""; // Keine spool_id/sm_id → Gewicht wird mit tag_uuid gesendet
+        if (scanRequestActive) {
+            scanRequestActive = false;
+            sendTagDataAsync(nfcJsonData);
+            tagProcessed = true;
+        } else {
+            oledShowProgressBar(2, 4, tr(STR_SPOOL_TAG), displayText.c_str());
+            oledSetPriority(DISPLAY_PRIORITY_ACTION, 2000);
+        }
       }
       else
       {
@@ -1433,7 +1490,7 @@ bool quickSpoolIdCheck(String uidString) {
         return false;
     }
 
-    Serial.println("=== FAST-PATH: Quick sm_id Check ===");
+    Serial.println("=== FAST-PATH: Quick spool_id Check ===");
 
     // Read enough pages to cover NDEF header + beginning of payload (pages 4-8 = 20 bytes)
     uint8_t ndefData[20];
@@ -1542,17 +1599,23 @@ bool quickSpoolIdCheck(String uidString) {
         Serial.print("JSON start from extended read: ");
         Serial.println(jsonStart);
 
-        // Check for sm_id pattern - look for non-zero sm_id values
-        if (jsonStart.indexOf("\"sm_id\":\"") >= 0) {
-            int smIdStart = jsonStart.indexOf("\"sm_id\":\"") + 9;
+        // Check for spool_id/sm_id pattern - look for non-zero id values
+        String idPattern = "\"spool_id\":\"";
+        int idPatternPos = jsonStart.indexOf(idPattern);
+        if (idPatternPos < 0) {
+            idPattern = "\"sm_id\":\"";
+            idPatternPos = jsonStart.indexOf(idPattern);
+        }
+        if (idPatternPos >= 0) {
+            int smIdStart = idPatternPos + idPattern.length();
             int smIdEnd = jsonStart.indexOf("\"", smIdStart);
 
             if (smIdEnd > smIdStart && smIdEnd < jsonStart.length()) {
                 String quickSpoolId = jsonStart.substring(smIdStart, smIdEnd);
-                Serial.print("Found sm_id in extended read: ");
+                Serial.print("Found spool_id/sm_id in extended read: ");
                 Serial.println(quickSpoolId);
 
-                // Only process if sm_id is not "0" (known spool)
+                // Only process if id is not "0" (known spool)
                 if (quickSpoolId != "0" && quickSpoolId.length() > 0) {
                     Serial.println("✓ FAST-PATH: Known spool detected!");
 
@@ -1573,13 +1636,13 @@ bool quickSpoolIdCheck(String uidString) {
                     Serial.println("✓ FAST-PATH SUCCESS: Known spool processed quickly");
                     return true;
                 } else {
-                    Serial.println("✗ FAST-PATH: sm_id is 0 - new brand filament, need full read");
+                    Serial.println("✗ FAST-PATH: spool_id/sm_id is 0 - new brand filament, need full read");
                     return false;
                 }
             }
         }
 
-        Serial.println("✗ FAST-PATH: No sm_id pattern in extended read");
+        Serial.println("✗ FAST-PATH: No spool_id/sm_id pattern in extended read");
         return false;
     }
 
@@ -1595,20 +1658,26 @@ bool quickSpoolIdCheck(String uidString) {
     Serial.print("Quick JSON data: ");
     Serial.println(quickJson);
 
-    // Look for sm_id pattern in the beginning of JSON - check for known vs new spools
-    if (quickJson.indexOf("\"sm_id\":\"") >= 0) {
-        Serial.println("✓ FAST-PATH: sm_id field found");
+    // Look for spool_id/sm_id pattern in the beginning of JSON - check for known vs new spools
+    String idPattern2 = "\"spool_id\":\"";
+    int idPattern2Pos = quickJson.indexOf(idPattern2);
+    if (idPattern2Pos < 0) {
+        idPattern2 = "\"sm_id\":\"";
+        idPattern2Pos = quickJson.indexOf(idPattern2);
+    }
+    if (idPattern2Pos >= 0) {
+        Serial.println("✓ FAST-PATH: spool_id/sm_id field found");
 
-        // Extract sm_id from quick data
-        int smIdStart = quickJson.indexOf("\"sm_id\":\"") + 9;
+        // Extract id from quick data
+        int smIdStart = idPattern2Pos + idPattern2.length();
         int smIdEnd = quickJson.indexOf("\"", smIdStart);
 
         if (smIdEnd > smIdStart && smIdEnd < quickJson.length()) {
             String quickSpoolId = quickJson.substring(smIdStart, smIdEnd);
-            Serial.print("✓ Quick extracted sm_id: ");
+            Serial.print("✓ Quick extracted spool_id/sm_id: ");
             Serial.println(quickSpoolId);
 
-            // Only process known spools (sm_id != "0") via fast path
+            // Only process known spools (id != "0") via fast path
             if (quickSpoolId != "0" && quickSpoolId.length() > 0) {
                 Serial.println("✓ FAST-PATH: Known spool detected!");
 
@@ -1629,12 +1698,12 @@ bool quickSpoolIdCheck(String uidString) {
                 Serial.println("✓ FAST-PATH SUCCESS: Known spool processed quickly");
                 return true;
             } else {
-                Serial.println("✗ FAST-PATH: sm_id is 0 - new brand filament, need full read");
-                return false; // sm_id="0" means new brand filament, needs full processing
+                Serial.println("✗ FAST-PATH: spool_id/sm_id is 0 - new brand filament, need full read");
+                return false; // id="0" means new brand filament, needs full processing
             }
         } else {
-            Serial.println("✗ FAST-PATH: Could not extract complete sm_id value");
-            return false; // Need full read to get complete sm_id
+            Serial.println("✗ FAST-PATH: Could not extract complete spool_id/sm_id value");
+            return false; // Need full read to get complete id
         }
     }
 
@@ -1885,7 +1954,7 @@ void writeJsonToTag(void *parameter) {
   vTaskDelete(NULL);
 }
 
-// Ensures sm_id is always the first key in JSON for fast-path detection
+// Ensures spool_id is always the first key in JSON for fast-path detection
 String optimizeJsonForFastPath(const char* payload) {
     JsonDocument inputDoc;
     DeserializationError error = deserializeJson(inputDoc, payload);
@@ -1896,26 +1965,26 @@ String optimizeJsonForFastPath(const char* payload) {
         return String(payload); // Return original if parsing fails
     }
 
-    // Create optimized JSON with sm_id first
+    // Create optimized JSON with spool_id first
     JsonDocument optimizedDoc;
 
-    // Always add sm_id first (even if it's "0" for brand filaments)
-    // Also convert spool_id to sm_id if present (backend may send either)
-    if (inputDoc["sm_id"].is<String>() && inputDoc["sm_id"].as<String>() != "0" && inputDoc["sm_id"].as<String>() != "") {
-        optimizedDoc["sm_id"] = inputDoc["sm_id"].as<String>();
-        Serial.print("Optimizing JSON: sm_id found = ");
-        Serial.println(inputDoc["sm_id"].as<String>());
-    } else if (inputDoc["spool_id"].is<int>() && inputDoc["spool_id"].as<int>() > 0) {
-        optimizedDoc["sm_id"] = String(inputDoc["spool_id"].as<int>());
-        Serial.print("Optimizing JSON: Converted spool_id to sm_id = ");
+    // Always add spool_id first (even if it's "0" for brand filaments)
+    // Accept legacy sm_id as input too, but always emit spool_id
+    if (inputDoc["spool_id"].is<int>() && inputDoc["spool_id"].as<int>() > 0) {
+        optimizedDoc["spool_id"] = String(inputDoc["spool_id"].as<int>());
+        Serial.print("Optimizing JSON: spool_id found = ");
         Serial.println(inputDoc["spool_id"].as<int>());
     } else if (inputDoc["spool_id"].is<String>() && inputDoc["spool_id"].as<String>() != "0" && inputDoc["spool_id"].as<String>() != "") {
-        optimizedDoc["sm_id"] = inputDoc["spool_id"].as<String>();
-        Serial.print("Optimizing JSON: Converted spool_id (string) to sm_id = ");
+        optimizedDoc["spool_id"] = inputDoc["spool_id"].as<String>();
+        Serial.print("Optimizing JSON: spool_id found = ");
         Serial.println(inputDoc["spool_id"].as<String>());
+    } else if (inputDoc["sm_id"].is<String>() && inputDoc["sm_id"].as<String>() != "0" && inputDoc["sm_id"].as<String>() != "") {
+        optimizedDoc["spool_id"] = inputDoc["sm_id"].as<String>();
+        Serial.print("Optimizing JSON: Converted legacy sm_id to spool_id = ");
+        Serial.println(inputDoc["sm_id"].as<String>());
     } else {
-        optimizedDoc["sm_id"] = "0"; // Default for brand filaments
-        Serial.println("Optimizing JSON: No sm_id or spool_id found, setting sm_id to '0'");
+        optimizedDoc["spool_id"] = "0"; // Default for brand filaments
+        Serial.println("Optimizing JSON: No spool_id or sm_id found, setting spool_id to '0'");
     }
 
     for (JsonPair kv : inputDoc.as<JsonObject>()) {
@@ -1949,7 +2018,7 @@ void startWriteJsonToTag(const bool isSpoolTag, const char* payload, int spoolId
     return;
   }
 
-  // Optimize JSON to ensure sm_id is first key for fast-path detection
+  // Optimize JSON to ensure spool_id is first key for fast-path detection
   String optimizedPayload = optimizeJsonForFastPath(payload);
 
   NfcWriteParameterType* parameters = new NfcWriteParameterType();
@@ -2029,6 +2098,11 @@ void scanRfidTask(void * parameter) {
     esp_task_wdt_reset();
     yield();
 
+    if (scanRequestActive && scanRequestStartedAtMs > 0 && (millis() - scanRequestStartedAtMs) > SCAN_REQUEST_TIMEOUT_MS) {
+      Serial.println("RFID scan-request timeout reached without tag");
+      sendScanRequestErrorToBackend("Timeout - no tag found");
+    }
+
     // Skip scanning during write operations, but keep NFC interface active
     if (nfcReaderState != NFC_WRITING && !nfcWriteInProgress && !nfcReadingTaskSuspendRequest && !booting)
     {
@@ -2081,7 +2155,8 @@ void scanRfidTask(void * parameter) {
         {
           activeTagUuid = uidString;
           // Try fast-path detection first for known spools
-          if (quickSpoolIdCheck(uidString)) {
+          // Skip fast-path when a scan request is active — full NDEF read needed to send tag data
+          if (!scanRequestActive && quickSpoolIdCheck(uidString)) {
               Serial.println("✓ FAST-PATH: Tag processed quickly, skipping full read");
               // Set reader back to idle for next scan
               nfcReaderState = NFC_READ_SUCCESS;
@@ -2157,16 +2232,48 @@ void scanRfidTask(void * parameter) {
         }
         else
         {
-          // UID length != 7, might be a Mifare Classic (Bambu tags)
-          Serial.println("Not a standard NTAG (UID length != 7), trying Bambu Lab tag...");
-          if (!detectBambuTag(uid, uidLength)) {
-            //TBD: Show error here?!
-            oledShowProgressBar(1, 1, tr(STR_FAILURE), tr(STR_UNKNOWN_TAG_TYPE));
-            oledSetPriority(DISPLAY_PRIORITY_WARNING, 2000);
-            Serial.println("This doesn't seem to be an NTAG2xx tag (UUID length != 7 bytes)!");
-            // Reset activeSpoolId when tag type is unknown to prevent autoSet
-            activeSpoolId = "";
-            Serial.println("Unknown tag type - activeSpoolId reset to prevent autoSet");
+          // UID length != 7 — could be Mifare Classic (BambuLab) or non-standard NTAG.
+          // Try NTAG-style NDEF read first to check for openspool/filaman protocol.
+          Serial.println("UID length != 7, checking for openspool/filaman protocol first...");
+          activeTagUuid = uidString;
+
+          bool handledAsNdef = false;
+          uint16_t tagSize = readTagSize();
+          if (tagSize > 0)
+          {
+            uint8_t* data = (uint8_t*)malloc(tagSize);
+            memset(data, 0, tagSize);
+            uint8_t numPages = tagSize / 4;
+            for (uint8_t i = 4; i < 4 + numPages; i++) {
+              if (!robustPageRead(i, data + (i - 4) * 4)) {
+                Serial.printf("Page %d read failed, stopping\n", i);
+                break;
+              }
+              if (data[(i - 4) * 4] == 0xFE) {
+                Serial.println("Found NDEF end marker");
+                break;
+              }
+              yield();
+              esp_task_wdt_reset();
+              vTaskDelay(pdMS_TO_TICKS(2));
+            }
+            if (decodeNdefAndReturnJson(data, uidString)) {
+              handledAsNdef = true;
+              nfcReaderState = NFC_READ_SUCCESS;
+            }
+            free(data);
+          }
+
+          if (!handledAsNdef)
+          {
+            Serial.println("No NDEF/openspool protocol found, trying Bambu Lab tag...");
+            if (!detectBambuTag(uid, uidLength)) {
+              oledShowProgressBar(1, 1, tr(STR_FAILURE), tr(STR_UNKNOWN_TAG_TYPE));
+              oledSetPriority(DISPLAY_PRIORITY_WARNING, 2000);
+              Serial.println("This doesn't seem to be an NTAG2xx tag (UUID length != 7 bytes)!");
+              activeSpoolId = "";
+              Serial.println("Unknown tag type - activeSpoolId reset to prevent autoSet");
+            }
           }
         }
       }

@@ -208,6 +208,25 @@ bool sendRfidResult(String tagUuid, int spoolId, int locationId, bool success, S
     return (httpCode == 200);
 }
 
+bool sendTagData(String tagJson) {
+    if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
+    HTTPClient http;
+    http.setTimeout(10000);
+    http.setReuse(true);
+    http.begin(filamanUrl + "/api/v1/devices/tag-data");
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", "Device " + filamanToken);
+    http.addHeader("Connection", "keep-alive");
+    JsonDocument doc;
+    doc["tag_json"] = tagJson;
+    String payload;
+    serializeJson(doc, payload);
+    int httpCode = http.POST(payload);
+    http.end();
+    Serial.printf("sendTagData: HTTP %d\n", httpCode);
+    return (httpCode == 200);
+}
+
 void filamanApiTask(void* pvParameters) {
     for (;;) {
         ApiRequest req;
@@ -228,10 +247,11 @@ void filamanApiTask(void* pvParameters) {
         if (hasReq) {
             filamanApiState = API_TRANSMITTING;
             switch (req.type) {
-                case API_REQUEST_HEARTBEAT: sendHeartbeatWithRetry(2); break;  // Mit Retry-Logik
+                case API_REQUEST_HEARTBEAT: sendHeartbeatWithRetry(2); break;
                 case API_REQUEST_WEIGHT: sendWeight(req.id1, req.str1, req.val); break;
                 case API_REQUEST_LOCATE: sendLocation(req.id1, req.str1, req.id2, req.str2); break;
                 case API_REQUEST_RFID_RESULT: sendRfidResult(req.str1, req.id1, req.id2, req.bool1, req.str3, req.remainingWeight); break;
+                case API_REQUEST_TAG_DATA: sendTagData(req.str1); break;
                 default: break;
             }
             filamanApiState = API_IDLE;
@@ -316,6 +336,23 @@ void sendRfidResultAsync(String tagUuid, int spoolId, int locationId, bool succe
             apiQueue[i].bool1 = success;
             apiQueue[i].str3 = errorMessage;
             apiQueue[i].remainingWeight = remainingWeight;
+            apiQueue[i].active = true;
+            break;
+        }
+        xSemaphoreGive(queueMutex);
+    }
+}
+
+void sendTagDataAsync(String tagJson) {
+    if (!checkFilamanRegistration()) return;
+    if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        for(int i=0; i<MAX_API_QUEUE; i++) if(!apiQueue[i].active) {
+            apiQueue[i].type = API_REQUEST_TAG_DATA;
+            apiQueue[i].str1 = tagJson;
+            apiQueue[i].id1 = 0;
+            apiQueue[i].id2 = 0;
+            apiQueue[i].str2 = "";
+            apiQueue[i].val = 0.0f;
             apiQueue[i].active = true;
             break;
         }

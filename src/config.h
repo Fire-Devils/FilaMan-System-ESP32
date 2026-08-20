@@ -25,7 +25,7 @@
 #define SCREEN_PROGRESS_BAR_HEIGHT          12U
 #define DISPLAY_BOOT_TEXT                   "FilaMan"
 
-#define WIFI_CHECK_INTERVAL                 60000U
+#define WIFI_CHECK_INTERVAL                 15000U
 #define DISPLAY_UPDATE_INTERVAL             1000U
 #define FILAMAN_HEARTBEAT_INTERVAL          60000U
 

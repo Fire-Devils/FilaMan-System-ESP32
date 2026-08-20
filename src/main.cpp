@@ -199,9 +199,17 @@ void loop() {
       mainTaskWasPaused = true;
     }
 
+    // Während eines expliziten Scan-Requests darf kein regulärer Wiegevorgang
+    // an das Backend gesendet werden.
+    if (scanRequestActive) {
+      weightCounterToApi = 0;
+      weightSend = 0;
+      lastWeight = weight;
+    }
+
 
     // Wenn Timer abgelaufen und nicht gerade ein RFID-Tag geschrieben wird
-    if (currentMillis - lastWeightReadTime >= weightReadInterval && nfcReaderState < NFC_WRITING)
+    if (!scanRequestActive && currentMillis - lastWeightReadTime >= weightReadInterval && nfcReaderState < NFC_WRITING)
     {
       lastWeightReadTime = currentMillis;
 
@@ -229,7 +237,7 @@ void loop() {
     lastWeight = weight;
 
     // Wenn ein Tag erkannt wurde und das Gewicht stabil ist (4+ seconds), an FilaMan senden
-    if (weightCounterToApi > 3 && weightSend == 0 && nfcReaderState == NFC_READ_SUCCESS && tagProcessed == false)
+    if (!scanRequestActive && weightCounterToApi > 3 && weightSend == 0 && nfcReaderState == NFC_READ_SUCCESS && tagProcessed == false)
     {
       tagProcessed = true;
 
@@ -251,7 +259,7 @@ void loop() {
     }
 
     // Handle successful tag write
-    if (nfcReaderState == NFC_WRITE_SUCCESS && tagProcessed == false)
+    if (!scanRequestActive && nfcReaderState == NFC_WRITE_SUCCESS && tagProcessed == false)
     {
       tagProcessed = true;
 
