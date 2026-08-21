@@ -29,8 +29,10 @@ void wifiSettings() {
     WiFi.setSleep(false);
     esp_wifi_set_ps(WIFI_PS_NONE);
 
-    // Angemessene Sendeleistung (reduziert Hitzeprobleme)
-    WiFi.setTxPower(WIFI_POWER_17dBm);
+    // Maximale Sendeleistung. 17dBm war ein Kompromiss gegen Hitzeprobleme,
+    // führte bei marginalem Empfang aber zu AP-seitigen Auth-/Assoc-Kicks
+    // (reason=2/4/9/202). Bei Verdacht auf Überhitzung wieder auf 17dBm zurück.
+    WiFi.setTxPower(WIFI_POWER_19_5dBm);
 
     // Hinweis: Kein esp_wifi_set_rssi_threshold() mehr.
     // Der vorherige Wert (-80 dBm) löste in Single-AP-Heimnetzen häufige
@@ -43,17 +45,28 @@ void wifiSettings() {
 // die eigentliche Wiederherstellung; hier nur Logging + Display-Update.
 void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
     switch (event) {
-        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-            Serial.printf("WiFi event: STA_DISCONNECTED, reason=%u\n",
-                          info.wifi_sta_disconnected.reason);
+        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED: {
+            // BSSID/RSSI mitloggen: wechselt die BSSID zwischen den Reconnects,
+            // pendelt das Gerät zwischen zwei APs (Mesh/Repeater) - dann kommen
+            // die Abbrüche vom Roaming, nicht vom Webserver.
+            const uint8_t *bssid = info.wifi_sta_disconnected.bssid;
+            Serial.printf("WiFi event: STA_DISCONNECTED, reason=%u, "
+                          "bssid=%02X:%02X:%02X:%02X:%02X:%02X, rssi=%d\n",
+                          info.wifi_sta_disconnected.reason,
+                          bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5],
+                          WiFi.RSSI());
             if (wifiOn) {
                 wifiOn = false;
                 oledShowTopRow();
             }
             break;
+        }
         case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-            Serial.print("WiFi event: STA_GOT_IP ");
-            Serial.println(WiFi.localIP());
+            Serial.printf("WiFi event: STA_GOT_IP %s, bssid=%s, rssi=%d, ch=%d\n",
+                          WiFi.localIP().toString().c_str(),
+                          WiFi.BSSIDstr().c_str(),
+                          WiFi.RSSI(),
+                          WiFi.channel());
             wifiOn = true;
             wifiErrorCounter = 0;
             // Power-Save nach Reconnect erneut deaktivieren (wird vom Stack

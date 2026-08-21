@@ -182,9 +182,10 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    statusMessage.textContent = 'Registration successful!';
-                    statusMessage.style.color = 'var(--success-text)';
-                    setTimeout(() => location.reload(), 2000);
+                    // 202 Accepted: Registrierung wurde nur eingereiht. Das
+                    // tatsaechliche Ergebnis kommt per WebSocket ('registerResult').
+                    statusMessage.textContent = 'Registering device...';
+                    statusMessage.style.color = 'var(--text-muted)';
                 } else {
                     statusMessage.textContent = 'Registration failed. Please check your code and URL.';
                     statusMessage.style.color = 'var(--error-text)';
@@ -207,6 +208,19 @@
                     const dot = document.getElementById('filamanDot');
                     dot.className = data.filaman_connected ? 'status-dot online' : 'status-dot offline';
                     document.getElementById('ramStatus').textContent = data.freeHeap + ' KB free';
+                }
+                else if (data.type === 'registerResult') {
+                    // Die Registrierung laeuft asynchron im API-Task; /api/register
+                    // antwortet sofort mit 202, das Ergebnis kommt hier an.
+                    const statusMessage = document.getElementById('statusMessage');
+                    if (data.success) {
+                        statusMessage.textContent = 'Registration successful!';
+                        statusMessage.style.color = 'var(--success-text)';
+                        setTimeout(() => location.reload(), 2000);
+                    } else {
+                        statusMessage.textContent = 'Registration failed. Please check your code and URL.';
+                        statusMessage.style.color = 'var(--error-text)';
+                    }
                 }
             };
             ws.onclose = () => setTimeout(connectWebSocket, 2000);

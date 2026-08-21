@@ -26,5 +26,6 @@ void sendAmsData(AsyncWebSocketClient *client);
 void sendNfcData();
 void foundNfcTag(AsyncWebSocketClient *client, uint8_t success);
 void sendWriteResult(AsyncWebSocketClient *client, uint8_t success);
+void sendRegisterResult(bool success);
 
 #endif

@@ -247,6 +247,16 @@ void filamanApiTask(void* pvParameters) {
         if (hasReq) {
             filamanApiState = API_TRANSMITTING;
             switch (req.type) {
+                case API_REQUEST_REGISTER: {
+                    // URL übernehmen und persistieren, dann blockierend
+                    // registrieren - hier unkritisch, da eigener Task.
+                    if (req.str2.length() > 0) filamanUrl = req.str2;
+                    saveFilamanConfig();
+                    bool ok = registerDevice(req.str1);
+                    Serial.printf("registerDevice: %s\n", ok ? "success" : "failed");
+                    sendRegisterResult(ok);
+                    break;
+                }
                 case API_REQUEST_HEARTBEAT: sendHeartbeatWithRetry(2); break;
                 case API_REQUEST_WEIGHT: sendWeight(req.id1, req.str1, req.val); break;
                 case API_REQUEST_LOCATE: sendLocation(req.id1, req.str1, req.id2, req.str2); break;
@@ -258,6 +268,29 @@ void filamanApiTask(void* pvParameters) {
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
+}
+
+// Reiht die Registrierung ein, statt sie im AsyncTCP-Kontext auszuführen.
+// str2 = FilaMan-URL, str1 = Device-Code.
+bool registerDeviceAsync(const String& url, const String& deviceCode) {
+    bool queued = false;
+    if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        for(int i=0; i<MAX_API_QUEUE; i++) if(!apiQueue[i].active) {
+            apiQueue[i].type = API_REQUEST_REGISTER;
+            apiQueue[i].id1 = 0;
+            apiQueue[i].id2 = 0;
+            apiQueue[i].str1 = deviceCode;
+            apiQueue[i].str2 = url;
+            apiQueue[i].val = 0.0f;
+            apiQueue[i].active = true;
+            queued = true;
+            break;
+        }
+        xSemaphoreGive(queueMutex);
+    }
+    // Ohne Queue-Platz kaeme nie ein "registerResult" - der Aufrufer muss
+    // dem Frontend dann sofort einen Fehler zurueckgeben.
+    return queued;
 }
 
 void sendHeartbeatAsync() {

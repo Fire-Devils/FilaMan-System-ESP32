@@ -105,6 +105,12 @@ void sendWriteResult(AsyncWebSocketClient *client, uint8_t success) {
     if (client) client->text(response); else ws.textAll(response);
 }
 
+// Ergebnis der asynchronen Geräte-Registrierung. Der HTTP-Request ist zu diesem
+// Zeitpunkt längst beantwortet (202), das Frontend wartet auf diese WS-Nachricht.
+void sendRegisterResult(bool success) {
+    ws.textAll("{\"type\":\"registerResult\",\"success\":" + String(success ? "true" : "false") + "}");
+}
+
 void foundNfcTag(AsyncWebSocketClient *client, uint8_t success) {
     if (success == lastSuccess && client == nullptr) return;
     ws.textAll("{\"type\":\"nfcTag\", \"payload\":{\"found\": " + String(success) + "}}");
@@ -189,12 +195,16 @@ void setupWebserver(AsyncWebServer &server) {
             request->send(400, "application/json", "{\"success\": false, \"error\": \"Invalid JSON\"}");
             return;
         }
-        if (doc["url"].is<String>()) filamanUrl = doc["url"].as<String>();
-        saveFilamanConfig();
-        if (registerDevice(doc["code"].as<String>())) {
-            request->send(200, "application/json", "{\"success\": true}");
+        // WICHTIG: registerDevice() macht einen blockierenden HTTPClient-Call
+        // (5s Timeout). Direkt hier aufgerufen friert das den AsyncTCP-Task ein
+        // und reisst alle laufenden HTTP-/WebSocket-Verbindungen ab. Daher nur
+        // einreihen und sofort antworten; das Ergebnis kommt per WebSocket
+        // ("registerResult") vom filamanApiTask.
+        String url = doc["url"].is<String>() ? doc["url"].as<String>() : String("");
+        if (registerDeviceAsync(url, doc["code"].as<String>())) {
+            request->send(202, "application/json", "{\"success\": true, \"pending\": true}");
         } else {
-            request->send(400, "application/json", "{\"success\": false}");
+            request->send(503, "application/json", "{\"success\": false, \"error\": \"API queue full\"}");
         }
     });
 
