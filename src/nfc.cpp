@@ -13,17 +13,6 @@
 //Adafruit_PN532 nfc(PN532_SCK, PN532_MISO, PN532_MOSI, PN532_SS);
 Adafruit_PN532 nfc(PN532_IRQ, PN532_RESET);
 
-// Adafruit_PN532::begin() toggles RSTPDN too briefly (~1ms/2ms) for some PN532
-// modules to reliably leave powerdown, which then makes getFirmwareVersion()
-// return 0 right after begin(). Pulse it explicitly with more margin first.
-static void pulsePn532Reset() {
-  pinMode(PN532_RESET, OUTPUT);
-  digitalWrite(PN532_RESET, LOW);
-  delay(50);
-  digitalWrite(PN532_RESET, HIGH);
-  delay(200);
-}
-
 TaskHandle_t RfidReaderTask;
 // AsyncWebServerRequest* volatile activeNfcWriteRequest = nullptr; // Removed
 SemaphoreHandle_t nfcRequestMutex = NULL;
@@ -572,7 +561,6 @@ uint8_t ntag2xx_WriteNDEF(const char *payload) {
     Serial.println("1. Neuinitialisierung des PN532...");
 
     // Reinitialize the PN532
-    pulsePn532Reset();
     nfc.begin();
     vTaskDelay(pdMS_TO_TICKS(500)); // Give it time to initialize
 
@@ -2347,7 +2335,6 @@ void scanRfidTask(void * parameter) {
 void startNfc() {
   nfcRequestMutex = xSemaphoreCreateMutex();
   oledShowProgressBar(4, NUM_SETUP_STEPS, DISPLAY_BOOT_TEXT, tr(STR_NFC_INIT));
-  pulsePn532Reset();
   nfc.begin();                                           // Beginne Kommunikation mit RFID Leser
 
   delay(1000);
