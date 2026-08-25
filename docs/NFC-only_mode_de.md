@@ -70,4 +70,4 @@ Folge den Anweisungen in der [Hauptdokumentation](../README.de.md#schritt-für-s
 Du benötigst Version 3.3.1 oder neuer für eine funktionierende Hardware-Erkennung und den NFC-only Modus.
 
 ## Druck-Dateien
-[STLs](../_3D Print Files/FilaMan_Lite)
+[STLs](../_3D%20Print%20Files/FilaMan_Lite/)
