@@ -18,8 +18,8 @@ const uint8_t PN532_RESET = 33;
 // ***** HX711 (Waage)
 // HX711 circuit wiring
 #if CONFIG_IDF_TARGET_ESP32S3
-const uint8_t LOADCELL_DOUT_PIN = 19;
-const uint8_t LOADCELL_SCK_PIN = 20;
+const uint8_t LOADCELL_DOUT_PIN = 5;
+const uint8_t LOADCELL_SCK_PIN = 6;
 #else
 const uint8_t LOADCELL_DOUT_PIN = 16;
 const uint8_t LOADCELL_SCK_PIN = 17;
