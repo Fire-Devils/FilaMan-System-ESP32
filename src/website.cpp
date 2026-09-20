@@ -12,6 +12,7 @@
 #include "config.h"
 #include "debug.h"
 #include "lang.h"
+#include "wlan.h"
 
 #ifndef VERSION
   #define VERSION "1.2.0"
@@ -292,6 +293,35 @@ void setupWebserver(AsyncWebServer &server) {
         }
         uint16_t timeout = (uint16_t)constrain((int)doc["sleepTimeout"], 0, 3600);
         saveOledSleepTimeout(timeout);
+        request->send(200, "application/json", "{\"success\": true}");
+    });
+
+    // WiFi TX Power API (Wert in 0.1 dBm, z.B. 195 = 19.5dBm)
+    server.on("/api/wifi-power", HTTP_GET, [](AsyncWebServerRequest *request){
+        JsonDocument doc;
+        doc["txPower"] = wifiTxPowerDeciDbm;
+        String response;
+        serializeJson(doc, response);
+        request->send(200, "application/json", response);
+    });
+
+    server.on("/api/wifi-power", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, (const uint8_t*)data, len);
+        if (error) {
+            request->send(400, "application/json", "{\"success\": false, \"error\": \"Invalid JSON\"}");
+            return;
+        }
+        if (!doc["txPower"].is<int>()) {
+            request->send(400, "application/json", "{\"success\": false, \"error\": \"Missing txPower\"}");
+            return;
+        }
+        int16_t txPower = (int16_t)doc["txPower"].as<int>();
+        if (!isValidTxPowerDeciDbm(txPower)) {
+            request->send(400, "application/json", "{\"success\": false, \"error\": \"Invalid txPower\"}");
+            return;
+        }
+        saveWifiTxPower(txPower);
         request->send(200, "application/json", "{\"success\": true}");
     });
 

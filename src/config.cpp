@@ -17,6 +17,9 @@ const uint8_t PN532_RESET = 33;
 
 // ***** HX711 (Waage)
 // HX711 circuit wiring
+// ACHTUNG ESP32-S3: GPIO19/20 sind die nativen USB-Leitungen (D-/D+) und liegen auf
+// dem DevKitC-1 an der "USB"-Buchse. Der HX711 wird dort unzuverlaessig erkannt.
+// Pins hier nur zusammen mit den Tabellen in README.md / README.de.md aendern.
 #if CONFIG_IDF_TARGET_ESP32S3
 const uint8_t LOADCELL_DOUT_PIN = 5;
 const uint8_t LOADCELL_SCK_PIN = 6;
@@ -59,6 +62,12 @@ bool filamanRegistered = false;
 // ***** Display Sleep
 uint16_t oledSleepTimeout = 60; // Default 60 seconds (0 = disabled)
 // ***** Display Sleep
+
+// ***** WiFi
+// Sendeleistung in 0.1 dBm. Default 19.5dBm = Maximum; nur senken, wenn der AP
+// das Geraet rauswirft (reason=2/4) oder es direkt neben dem AP steht.
+int16_t wifiTxPowerDeciDbm = 195;
+// ***** WiFi
 
 // ***** Task Prios
 uint8_t rfidTaskCore = 1;

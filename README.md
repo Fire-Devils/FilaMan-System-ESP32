@@ -111,17 +111,21 @@ When you scan a manufacturer NFC tag for the first time:
 
 
 ### Pin Configuration
-| Component          | ESP32 Pin |
-|-------------------|-----------|
-| HX711 DOUT        | 16        |
-| HX711 SCK         | 17        |
-| OLED SDA          | 21        |
-| OLED SCL          | 22        |
-| PN532 IRQ         | 32        |
-| PN532 RESET       | 33        |
-| PN532 SDA         | 21        |
-| PN532 SCL         | 22        |
-| TTP223 I/O        | 25        |
+| Component          | ESP32 Pin | ESP32-S3 Pin |
+|-------------------|-----------|--------------|
+| HX711 DOUT        | 16        | 5            |
+| HX711 SCK         | 17        | 6            |
+| OLED SDA          | 21        | 8            |
+| OLED SCL          | 22        | 9            |
+| PN532 IRQ         | 32        | 15           |
+| PN532 RESET       | 33        | 16           |
+| PN532 SDA         | 21        | 8            |
+| PN532 SCL         | 22        | 9            |
+| TTP223 I/O        | 25        | 7            |
+
+The I2C pins are the Arduino defaults for each chip and are not set explicitly in the code.
+
+**!! ESP32-S3: do not use GPIO19/GPIO20 for the HX711.** These are the native USB data lines (D-/D+) and are wired to the "USB" connector on the DevKitC-1, which makes the HX711 detection unreliable.
 
 **!! Make sure that the DIP switches on the PN532 are set to I2C**
 **Use the 3V pin from the ESP for the touch sensor**

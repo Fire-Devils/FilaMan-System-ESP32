@@ -15,6 +15,7 @@
 #define NVS_NAMESPACE_SETTINGS             "settings"
 #define NVS_KEY_LANGUAGE                    "language"
 #define NVS_KEY_OLED_SLEEP                  "oled_sleep"
+#define NVS_KEY_WIFI_TXPOWER                "wifi_txpwr"
 #define SCALE_DEFAULT_CALIBRATION_VALUE     430.0f;
 
 #define OLED_RESET                          -1      // Reset pin # (or -1 if sharing Arduino reset pin)
@@ -74,4 +75,7 @@ extern uint8_t scaleTaskPrio;
 
 extern uint16_t defaultScaleCalibrationValue;
 extern uint16_t oledSleepTimeout;
+
+// WLAN-Sendeleistung in 0.1 dBm (195 = 19.5dBm). Siehe txPowerFromDeciDbm() in wlan.cpp.
+extern int16_t wifiTxPowerDeciDbm;
 #endif
