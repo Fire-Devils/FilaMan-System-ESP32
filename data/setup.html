@@ -87,6 +87,24 @@
                 </div>
                 <div id="sleepStatusMessage" style="margin-top: 0.5rem;"></div>
             </div>
+
+            <div class="fm-card">
+                <h2>WiFi Settings</h2>
+
+                <div class="fm-form-group" style="margin-top: 1rem;">
+                    <label class="fm-label" for="txPowerSelect">WiFi Transmit Power</label>
+                    <select id="txPowerSelect" class="fm-input">
+                        <option value="195">19.5 dBm (default, maximum range)</option>
+                        <option value="170">17 dBm</option>
+                        <option value="150">15 dBm</option>
+                        <option value="130">13 dBm</option>
+                        <option value="110">11 dBm</option>
+                        <option value="85">8.5 dBm (lowest)</option>
+                    </select>
+                    <p style="font-size: 0.8rem; margin-top: 0.5rem;">Only lower this if your router keeps dropping the device, or if it sits right next to the access point. Applies immediately, no restart needed.</p>
+                </div>
+                <div id="txPowerStatusMessage" style="margin-top: 0.5rem;"></div>
+            </div>
         </main>
     </div>
 
@@ -157,6 +175,45 @@
                 msg.textContent = 'Error saving setting.';
                 msg.style.color = 'var(--error-text)';
                 console.error('Error saving display settings:', error);
+            });
+        });
+
+        // WiFi transmit power setting
+        fetch('/api/wifi-power')
+            .then(response => response.json())
+            .then(data => {
+                const sel = document.getElementById('txPowerSelect');
+                const val = String(data.txPower);
+                let matched = false;
+                for (let i = 0; i < sel.options.length; i++) {
+                    if (sel.options[i].value === val) { sel.value = val; matched = true; break; }
+                }
+                if (!matched) sel.value = '195';
+            })
+            .catch(error => console.error('Error fetching wifi power:', error));
+
+        document.getElementById('txPowerSelect').addEventListener('change', function() {
+            const msg = document.getElementById('txPowerStatusMessage');
+            fetch('/api/wifi-power', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ txPower: parseInt(this.value) })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    msg.textContent = 'Saved.';
+                    msg.style.color = 'var(--success-text)';
+                    setTimeout(() => { msg.textContent = ''; }, 2000);
+                } else {
+                    msg.textContent = 'Error saving setting.';
+                    msg.style.color = 'var(--error-text)';
+                }
+            })
+            .catch(error => {
+                msg.textContent = 'Error saving setting.';
+                msg.style.color = 'var(--error-text)';
+                console.error('Error saving wifi power:', error);
             });
         });
 
