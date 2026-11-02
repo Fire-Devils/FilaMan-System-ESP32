@@ -35,7 +35,7 @@ jobs:
 
   gitea-release:
     needs: detect-provider
-    if: needs.detect-provider.outputs.provider == 'gitea'
+    if: needs.detect-provider.outputs.provider == 'gitea' && !contains(github.ref_name, '-beta')
     uses: ./.github/workflows/gitea-release.yml
     secrets:
       GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}

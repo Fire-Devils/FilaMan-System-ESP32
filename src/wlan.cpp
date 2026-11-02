@@ -7,6 +7,7 @@
 #include "display.h"
 #include "config.h"
 #include "lang.h"
+#include <Preferences.h>
 
 #ifdef HAS_ETHERNET
 #include <ETH.h>
@@ -22,6 +23,47 @@ bool networkConnected() {
     #else
       return WiFi.status() == WL_CONNECTED;
     #endif
+}
+
+// Erlaubte Stufen in 0.1 dBm. Der ESP32-Treiber kennt nur diese festen Werte;
+// alles andere fällt auf das Maximum (19.5dBm) zurück.
+wifi_power_t txPowerFromDeciDbm(int16_t deciDbm) {
+    switch (deciDbm) {
+        case 85:  return WIFI_POWER_8_5dBm;
+        case 110: return WIFI_POWER_11dBm;
+        case 130: return WIFI_POWER_13dBm;
+        case 150: return WIFI_POWER_15dBm;
+        case 170: return WIFI_POWER_17dBm;
+        case 195: return WIFI_POWER_19_5dBm;
+        default:  return WIFI_POWER_19_5dBm;
+    }
+}
+
+bool isValidTxPowerDeciDbm(int16_t deciDbm) {
+    return deciDbm == 85 || deciDbm == 110 || deciDbm == 130 ||
+           deciDbm == 150 || deciDbm == 170 || deciDbm == 195;
+}
+
+void loadWifiTxPower() {
+    Preferences preferences;
+    preferences.begin(NVS_NAMESPACE_SETTINGS, true);
+    int16_t stored = preferences.getShort(NVS_KEY_WIFI_TXPOWER, 195);
+    preferences.end();
+    wifiTxPowerDeciDbm = isValidTxPowerDeciDbm(stored) ? stored : 195;
+    Serial.print("WiFi TX power loaded: ");
+    Serial.print(wifiTxPowerDeciDbm / 10.0, 1);
+    Serial.println(" dBm");
+}
+
+void saveWifiTxPower(int16_t deciDbm) {
+    if (!isValidTxPowerDeciDbm(deciDbm)) return;
+    wifiTxPowerDeciDbm = deciDbm;
+    Preferences preferences;
+    preferences.begin(NVS_NAMESPACE_SETTINGS, false);
+    preferences.putShort(NVS_KEY_WIFI_TXPOWER, deciDbm);
+    preferences.end();
+    // Sofort anwenden, ein Neustart ist nicht noetig.
+    WiFi.setTxPower(txPowerFromDeciDbm(deciDbm));
 }
 
 void wifiSettings() {
@@ -41,8 +83,13 @@ void wifiSettings() {
     WiFi.setSleep(false);
     esp_wifi_set_ps(WIFI_PS_NONE);
 
-    // Angemessene Sendeleistung (reduziert Hitzeprobleme)
-    WiFi.setTxPower(WIFI_POWER_17dBm);
+    // Sendeleistung, einstellbar unter Setup (Default 19.5dBm = Maximum).
+    // 17dBm war früher ein Kompromiss gegen Hitzeprobleme, führte bei marginalem
+    // Empfang aber zu AP-seitigen Auth-/Assoc-Kicks (reason=2/4/9/202). Umgekehrt
+    // kann volle Leistung direkt neben dem AP dessen Empfaenger uebersteuern -
+    // dann hilft ein niedrigerer Wert (beim ESP32-S3 z.B. 8.5dBm).
+    loadWifiTxPower();
+    WiFi.setTxPower(txPowerFromDeciDbm(wifiTxPowerDeciDbm));
 
     // Hinweis: Kein esp_wifi_set_rssi_threshold() mehr.
     // Der vorherige Wert (-80 dBm) löste in Single-AP-Heimnetzen häufige
@@ -76,23 +123,36 @@ void onNetworkEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
             oledShowTopRow();
             break;
 #endif
-        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-            Serial.printf("WiFi event: STA_DISCONNECTED, reason=%u\n",
-                          info.wifi_sta_disconnected.reason);
+        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED: {
+            // BSSID/RSSI mitloggen: wechselt die BSSID zwischen den Reconnects,
+            // pendelt das Gerät zwischen zwei APs (Mesh/Repeater) - dann kommen
+            // die Abbrüche vom Roaming, nicht vom Webserver.
+            const uint8_t *bssid = info.wifi_sta_disconnected.bssid;
+            Serial.printf("WiFi event: STA_DISCONNECTED, reason=%u, "
+                          "bssid=%02X:%02X:%02X:%02X:%02X:%02X, rssi=%d\n",
+                          info.wifi_sta_disconnected.reason,
+                          bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5],
+                          WiFi.RSSI());
             if (wifiOn) {
                 wifiOn = false;
                 oledShowTopRow();
             }
             break;
+        }
         case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-            Serial.print("WiFi event: STA_GOT_IP ");
-            Serial.println(WiFi.localIP());
+            Serial.printf("WiFi event: STA_GOT_IP %s, bssid=%s, rssi=%d, ch=%d\n",
+                          WiFi.localIP().toString().c_str(),
+                          WiFi.BSSIDstr().c_str(),
+                          WiFi.RSSI(),
+                          WiFi.channel());
             wifiOn = true;
             wifiErrorCounter = 0;
             // Power-Save nach Reconnect erneut deaktivieren (wird vom Stack
             // gelegentlich zurückgesetzt).
             WiFi.setSleep(false);
             esp_wifi_set_ps(WIFI_PS_NONE);
+            // Gleiches gilt für die Sendeleistung: nach einem Reconnect erneut setzen.
+            WiFi.setTxPower(txPowerFromDeciDbm(wifiTxPowerDeciDbm));
             oledShowTopRow();
             break;
         default:
@@ -145,7 +205,10 @@ void initNetwork() {
 
   if(wm_nonblocking) wm.setConfigPortalBlocking(false);
   //wm.setConfigPortalTimeout(320); // Portal nach 5min schließen
-  wm.setWiFiAutoReconnect(true);
+  // WiFiManager-Reconnect deaktiviert: der ESP32-Stack übernimmt das via
+  // setAutoReconnect(true). Zwei parallele Reconnect-Mechanismen erzeugen
+  // sonst einen Verbindungssturm, der den Router zu AUTH_EXPIRE-Kicks verleitet.
+  wm.setWiFiAutoReconnect(false);
   wm.setConnectTimeout(10);
 
   oledShowProgressBar(1, NUM_SETUP_STEPS, DISPLAY_BOOT_TEXT, tr(STR_WIFI_INIT));
@@ -179,19 +242,9 @@ void checkWiFiConnection() {
   #endif
   if (WiFi.status() != WL_CONNECTED)
   {
-    // wifiOn-Flag und Display werden bereits vom WiFi-Event gesetzt.
-    // Hier nur noch das Reconnect-Backup für Fälle, in denen das ESP32-
-    // Auto-Reconnect aus irgendeinem Grund nicht greift (z. B. nach
-    // bestimmten reason-codes wie AUTH_EXPIRE, NO_AP_FOUND).
+    // setAutoReconnect(true) übernimmt die Wiederverbindung automatisch.
+    // Hier nur Display-Update und Fehler zählen für den Neustart-Watchdog.
     oledDisplayText(tr(STR_WIFI_RECONNECTING));
-
-    // Sauberer Reconnect-Zyklus: erst trennen (ohne SSID zu löschen,
-    // ohne WiFi-Off), kurz Pause, dann neu verbinden. Hilft bei Routern
-    // mit Band-Steering, die einen halbtoten Session-State behalten.
-    WiFi.disconnect(false, false);
-    vTaskDelay(pdMS_TO_TICKS(50));
-    WiFi.reconnect();
-
     wifiErrorCounter++;
 
     // Nach ca. 5 Minuten ohne Verbindung Neustart (bei WIFI_CHECK_INTERVAL

@@ -68,3 +68,6 @@ Der Pull-up-Widerstand ist nicht zwingend erforderlich, erhöht aber die Zuverl�
 Folge den Anweisungen in der [Hauptdokumentation](../README.de.md#schritt-für-schritt-installation).
 
 Du benötigst Version 3.3.1 oder neuer für eine funktionierende Hardware-Erkennung und den NFC-only Modus.
+
+## Druck-Dateien
+[STLs](../_3D%20Print%20Files/FilaMan_Lite/)

@@ -33,9 +33,14 @@
     #include "boards/olimex_esp32_poe.h"
     #define BOARD_IDENTIFIER "OLIMEX_ESP32_POE"
 
+#elif defined(ESP32_S3_DEVKITC)
+    // ESP32-S3-DevKitC-1 Board
+    #include "boards/esp32_s3_devkitc.h"
+    #define BOARD_IDENTIFIER "ESP32_S3_DEVKITC"
+
 #else
     // Throw an explicit build error if an environment lacks a target flag
-    #error "No valid board target defined in platformio.ini! Ensure either -DESP32_DEV or -DOLIMEX_ESP32_POE is set."
+    #error "No valid board target defined in platformio.ini! Ensure -DESP32_DEV, -DOLIMEX_ESP32_POE or -DESP32_S3_DEVKITC is set."
 #endif
 
 // Automatically enable ethernet support if the board defines a PHY type
