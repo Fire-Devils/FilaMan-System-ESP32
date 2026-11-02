@@ -12,6 +12,7 @@
 #include "config.h"
 #include "debug.h"
 #include "lang.h"
+#include "wlan.h"
 
 #ifndef VERSION
   #define VERSION "1.2.0"
@@ -105,6 +106,12 @@ void sendWriteResult(AsyncWebSocketClient *client, uint8_t success) {
     if (client) client->text(response); else ws.textAll(response);
 }
 
+// Ergebnis der asynchronen Geräte-Registrierung. Der HTTP-Request ist zu diesem
+// Zeitpunkt längst beantwortet (202), das Frontend wartet auf diese WS-Nachricht.
+void sendRegisterResult(bool success) {
+    ws.textAll("{\"type\":\"registerResult\",\"success\":" + String(success ? "true" : "false") + "}");
+}
+
 void foundNfcTag(AsyncWebSocketClient *client, uint8_t success) {
     if (success == lastSuccess && client == nullptr) return;
     ws.textAll("{\"type\":\"nfcTag\", \"payload\":{\"found\": " + String(success) + "}}");
@@ -189,12 +196,16 @@ void setupWebserver(AsyncWebServer &server) {
             request->send(400, "application/json", "{\"success\": false, \"error\": \"Invalid JSON\"}");
             return;
         }
-        if (doc["url"].is<String>()) filamanUrl = doc["url"].as<String>();
-        saveFilamanConfig();
-        if (registerDevice(doc["code"].as<String>())) {
-            request->send(200, "application/json", "{\"success\": true}");
+        // WICHTIG: registerDevice() macht einen blockierenden HTTPClient-Call
+        // (5s Timeout). Direkt hier aufgerufen friert das den AsyncTCP-Task ein
+        // und reisst alle laufenden HTTP-/WebSocket-Verbindungen ab. Daher nur
+        // einreihen und sofort antworten; das Ergebnis kommt per WebSocket
+        // ("registerResult") vom filamanApiTask.
+        String url = doc["url"].is<String>() ? doc["url"].as<String>() : String("");
+        if (registerDeviceAsync(url, doc["code"].as<String>())) {
+            request->send(202, "application/json", "{\"success\": true, \"pending\": true}");
         } else {
-            request->send(400, "application/json", "{\"success\": false}");
+            request->send(503, "application/json", "{\"success\": false, \"error\": \"API queue full\"}");
         }
     });
 
@@ -282,6 +293,40 @@ void setupWebserver(AsyncWebServer &server) {
         }
         uint16_t timeout = (uint16_t)constrain((int)doc["sleepTimeout"], 0, 3600);
         saveOledSleepTimeout(timeout);
+        request->send(200, "application/json", "{\"success\": true}");
+    });
+
+    // WiFi TX Power API (Wert in 0.1 dBm, z.B. 195 = 19.5dBm)
+    server.on("/api/wifi-power", HTTP_GET, [](AsyncWebServerRequest *request){
+        JsonDocument doc;
+        doc["txPower"] = wifiTxPowerDeciDbm;
+        String response;
+        serializeJson(doc, response);
+        request->send(200, "application/json", response);
+    });
+
+    server.on("/api/wifi-power", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, (const uint8_t*)data, len);
+        if (error) {
+            request->send(400, "application/json", "{\"success\": false, \"error\": \"Invalid JSON\"}");
+            return;
+        }
+        if (!doc["txPower"].is<int>()) {
+            request->send(400, "application/json", "{\"success\": false, \"error\": \"Missing txPower\"}");
+            return;
+        }
+        int16_t txPower = (int16_t)doc["txPower"].as<int>();
+        if (!isValidTxPowerDeciDbm(txPower)) {
+            request->send(400, "application/json", "{\"success\": false, \"error\": \"Invalid txPower\"}");
+            return;
+        }
+        saveWifiTxPower(txPower);
+        request->send(200, "application/json", "{\"success\": true}");
+    });
+
+    server.on("/api/v1/rfid/scan-request", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+        setScanRequest(true);
         request->send(200, "application/json", "{\"success\": true}");
     });
 

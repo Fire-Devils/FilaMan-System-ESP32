@@ -33,6 +33,12 @@ uint16_t oledSleepTimeout = 60; // Default 60 seconds (0 = disabled)
 
 // ***** Display Sleep
 
+// ***** WiFi
+// Sendeleistung in 0.1 dBm. Default 19.5dBm = Maximum; nur senken, wenn der AP
+// das Geraet rauswirft (reason=2/4) oder es direkt neben dem AP steht.
+int16_t wifiTxPowerDeciDbm = 195;
+// ***** WiFi
+
 // ***** Task Prios
 uint8_t rfidTaskCore = 1;
 uint8_t rfidTaskPrio = 1;

@@ -111,17 +111,21 @@ Wenn Sie einen Hersteller-NFC-Tag zum ersten Mal scannen:
 
 
 ### Pin-Konfiguration
-| Komponente         | ESP32 Pin |
-|-------------------|-----------|
-| HX711 DOUT        | 16        |
-| HX711 SCK         | 17        |
-| OLED SDA          | 21        |
-| OLED SCL          | 22        |
-| PN532 IRQ         | 32        |
-| PN532 RESET       | 33        |
-| PN532 SDA         | 21        |
-| PN532 SCL         | 22        |
-| TTP223 I/O        | 25        |
+| Komponente         | ESP32 Pin | ESP32-S3 Pin |
+|-------------------|-----------|--------------|
+| HX711 DOUT        | 16        | 5            |
+| HX711 SCK         | 17        | 6            |
+| OLED SDA          | 21        | 8            |
+| OLED SCL          | 22        | 9            |
+| PN532 IRQ         | 32        | 15           |
+| PN532 RESET       | 33        | 16           |
+| PN532 SDA         | 21        | 8            |
+| PN532 SCL         | 22        | 9            |
+| TTP223 I/O        | 25        | 7            |
+
+Die I2C-Pins sind die Arduino-Standardwerte des jeweiligen Chips und werden im Code nicht explizit gesetzt.
+
+**!! ESP32-S3: GPIO19/GPIO20 nicht für den HX711 verwenden.** Das sind die nativen USB-Datenleitungen (D-/D+), die auf dem DevKitC-1 an der "USB"-Buchse liegen. Der HX711 wird dort nur unzuverlässig erkannt.
 
 **!! Stellen Sie sicher, dass die DIP-Schalter am PN532 auf I2C eingestellt sind.**
 **Verwenden Sie den 3V-Pin des ESP für den Touch-Sensor.**

@@ -74,3 +74,6 @@ detect a missing hx711. But it should also work w/o the pull-up resistor.
 Follow the instructions in the [main readme](../README.md#step-by-step-installation).
 
 You need version 3.3.1 or later for a working hardware recognition and NFC-only mode.
+
+## Print Files
+[STLs](../_3D%20Print%20Files/FilaMan_Lite/)
