@@ -17,6 +17,9 @@ enum DisplayPriority : uint8_t {
 
 extern Adafruit_SSD1306 display;
 extern bool wifiOn;
+#ifdef HAS_ETHERNET
+extern bool ethOn; // Only defined if HAS_ETHERNET is set
+#endif
 
 // Display priority management
 bool oledCanUpdate(DisplayPriority newPriority);

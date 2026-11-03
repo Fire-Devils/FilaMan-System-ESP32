@@ -9,9 +9,21 @@
 #include "lang.h"
 #include <Preferences.h>
 
+#ifdef HAS_ETHERNET
+#include <ETH.h>
+#endif
+
 WiFiManager wm;
 bool wm_nonblocking = false;
 uint8_t wifiErrorCounter = 0;
+
+bool networkConnected() {
+    #ifdef HAS_ETHERNET
+      return ethOn || (WiFi.status() == WL_CONNECTED);
+    #else
+      return WiFi.status() == WL_CONNECTED;
+    #endif
+}
 
 // Erlaubte Stufen in 0.1 dBm. Der ESP32-Treiber kennt nur diese festen Werte;
 // alles andere fällt auf das Maximum (19.5dBm) zurück.
@@ -88,8 +100,29 @@ void wifiSettings() {
 // Reagiert sofort auf Verbindungsverlust, statt bis zum nächsten
 // checkWiFiConnection()-Tick zu warten. Das ESP32-Auto-Reconnect übernimmt
 // die eigentliche Wiederherstellung; hier nur Logging + Display-Update.
-void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+void onNetworkEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
     switch (event) {
+      // Adds Ethernet Events
+#ifdef HAS_ETHERNET
+        case ARDUINO_EVENT_ETH_START:
+            ETH.setHostname("FilaMan");
+            break;
+        case ARDUINO_EVENT_ETH_CONNECTED:
+            Serial.println("ETH connected");
+            break;
+        case ARDUINO_EVENT_ETH_GOT_IP:
+            Serial.print("ETH IP: ");
+            Serial.println(ETH.localIP());
+            ethOn = true;
+            wifiErrorCounter = 0;
+            oledShowTopRow();
+            break;
+        case ARDUINO_EVENT_ETH_DISCONNECTED:
+            Serial.println("ETH disconnected");
+            ethOn = false;
+            oledShowTopRow();
+            break;
+#endif
         case ARDUINO_EVENT_WIFI_STA_DISCONNECTED: {
             // BSSID/RSSI mitloggen: wechselt die BSSID zwischen den Reconnects,
             // pendelt das Gerät zwischen zwei APs (Mesh/Repeater) - dann kommen
@@ -133,13 +166,35 @@ void configModeCallback (WiFiManager *myWiFiManager) {
   oledDisplayText(tr(STR_WIFI_CONFIG_MODE));
 }
 
-void initWiFi() {
+void initNetwork() {
   // load Wifi settings
   wifiSettings();
 
-  // WiFi-Events abonnieren, bevor autoConnect() läuft, damit auch frühe
+  // Network Events abonnieren, bevor autoConnect() läuft, damit auch frühe
   // Disconnects/Reconnects schon erfasst werden.
-  WiFi.onEvent(onWiFiEvent);
+  WiFi.onEvent(onNetworkEvent);
+
+#ifdef HAS_ETHERNET
+    // Important for ESP32-POE-ISO:
+    // Keep PHY power disabled before ETH.begin().
+    // The LAN8720A/LAN87xx PHY must not be powered before the ESP32 RMII clock
+    // is available on ETH_CLK_PIN.
+    pinMode(ETH_PHY_POWER, OUTPUT);
+    digitalWrite(ETH_PHY_POWER, LOW);
+    delay(200);
+
+    // now lets start the ethernet driver. It will check for the link and if found, it will set ethOn = true in the event handler.
+    ETH.begin(ETH_PHY_ADDR, ETH_PHY_POWER, ETH_PHY_MDC, ETH_PHY_MDIO, ETH_PHY_TYPE, ETH_CLK_MODE);
+
+    for (int i = 0; i < 50 && !ethOn; i++) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    if (ethOn) {
+        Serial.println("ETH connected - skipping WiFiManager");
+        oledShowTopRow();
+        return; // ← skip WiFiManager entirely
+    }
+#endif
 
   wm.setAPCallback(configModeCallback);
 
@@ -178,6 +233,13 @@ void initWiFi() {
 }
 
 void checkWiFiConnection() {
+  #if defined(HAS_ETHERNET)
+    // If ethernet is connected, WiFi reconnection is not needed
+    if (ethOn) {
+        wifiErrorCounter = 0;
+        return;
+    }
+  #endif
   if (WiFi.status() != WL_CONNECTED)
   {
     // setAutoReconnect(true) übernimmt die Wiederverbindung automatisch.
@@ -200,4 +262,11 @@ void checkWiFiConnection() {
     // gepflegt, daher hier nichts weiter zu tun.
     wifiErrorCounter = 0;
   }
+}
+
+String getLocalIP() {
+#ifdef HAS_ETHERNET
+    if (ethOn) return ETH.localIP().toString();
+#endif
+    return WiFi.localIP().toString();
 }

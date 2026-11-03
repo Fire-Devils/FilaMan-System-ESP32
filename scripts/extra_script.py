@@ -1,6 +1,15 @@
+from SCons.Script import COMMAND_LINE_TARGETS
+import os
+
+# PlatformIO uses a special Import function for the build environment object
 Import("env")
 
-# Hook in die Build-Prozesse
-env.AddPreAction("uploadfs", env.VerboseAction("$PROJECT_DIR/scripts/buildfs.sh", "Building Filesystem Image..."))
+# 1. If uploading the filesystem, ensure it gets built first automatically
+if "uploadfs" in COMMAND_LINE_TARGETS:
+    env.Depends("uploadfs", "buildfs")
 
-env.AddPreAction("upload", env.VerboseAction("$PROJECT_DIR/scripts/uploadfs.sh", "Uploading Filesystem Image..."))
+# 2. If running a standard firmware upload, ensure the filesystem 
+#    also builds and uploads automatically as a pre-requisite.
+if "upload" in COMMAND_LINE_TARGETS:
+    env.Depends("upload", "uploadfs")
+    env.Depends("uploadfs", "buildfs")

@@ -4,6 +4,9 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+// Board-specific pin definitions
+#include "board_config.h"
+
 #include "wlan.h"
 #include "config.h"
 #include "website.h"
@@ -36,11 +39,28 @@ void setup() {
   // Load language setting from NVS (before display init)
   loadLanguage();
 
+  // Init I2C with defined pins and pull-up.
+  // Request the ESP32 internal pull-up resistors on
+  pinMode(I2C_SDA, INPUT_PULLUP); 
+  pinMode(I2C_SCL, INPUT_PULLUP);
+  delay(5);
+
+    Serial.printf("Initializing Shared I2C Bus... ");
+  // Check if pins are defined (non-zero)
+  if (I2C_SDA && I2C_SCL) {
+    Wire.begin(I2C_SDA, I2C_SCL);
+    Serial.printf("Done. (SDA: %d, SCL: %d)\n", I2C_SDA, I2C_SCL);
+  } else {
+    // Fallback to framework defaults (21/22) if undefined
+    Wire.begin();
+    Serial.println(F("Done. (Default Pins)"));
+  }
+
   // Start Display
   setupDisplay();
 
-  // WiFiManager
-  initWiFi();
+  // Init Network (WiFi/Ethernet)
+  initNetwork();
 
   // Webserver
   setupWebserver(server);
@@ -121,11 +141,11 @@ void loop() {
   // Handle connection errors (not registered or not connected)
   if (intervalElapsed(currentMillis, lastConnErrorShowTime, connErrorShowInterval)) {
       if (!filamanRegistered && oledCanUpdate(DISPLAY_PRIORITY_WARNING)) {
-          oledShowConnectionError(tr(STR_NOT_REGISTERED), WiFi.localIP().toString());
+          oledShowConnectionError(tr(STR_NOT_REGISTERED), getLocalIP());
           oledSetPriority(DISPLAY_PRIORITY_WARNING, 3000);
           mainTaskWasPaused = true;
       } else if (!filamanConnected && oledCanUpdate(DISPLAY_PRIORITY_WARNING)) {
-          oledShowConnectionError(tr(STR_API_CONN_LOST), WiFi.localIP().toString());
+          oledShowConnectionError(tr(STR_API_CONN_LOST), getLocalIP());
           oledSetPriority(DISPLAY_PRIORITY_WARNING, 3000);
           mainTaskWasPaused = true;
       } else if ( !scaleConnected ){

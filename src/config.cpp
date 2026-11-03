@@ -1,45 +1,13 @@
 #include "config.h"
 
 // ################### Config Bereich Start
-// ***** PN532 (RFID)
-//#define PN532_SCK   18
-//#define PN532_MOSI  23
-//#define PN532_SS    5
-//#define PN532_MISO  19
-#if CONFIG_IDF_TARGET_ESP32S3
-const uint8_t PN532_IRQ = 15;
-const uint8_t PN532_RESET = 16;
-#else
-const uint8_t PN532_IRQ = 32;
-const uint8_t PN532_RESET = 33;
-#endif
-// ***** PN532
+// ***** PN532 (RFID) - Pins moved to include/boards/<board>.h
 
-// ***** HX711 (Waage)
-// HX711 circuit wiring
-// ACHTUNG ESP32-S3: GPIO19/20 sind die nativen USB-Leitungen (D-/D+) und liegen auf
-// dem DevKitC-1 an der "USB"-Buchse. Der HX711 wird dort unzuverlaessig erkannt.
-// Pins hier nur zusammen mit den Tabellen in README.md / README.de.md aendern.
-#if CONFIG_IDF_TARGET_ESP32S3
-const uint8_t LOADCELL_DOUT_PIN = 5;
-const uint8_t LOADCELL_SCK_PIN = 6;
-#else
-const uint8_t LOADCELL_DOUT_PIN = 16;
-const uint8_t LOADCELL_SCK_PIN = 17;
-#endif
+// ***** HX711 (Waage) - Scale Defaults, Pins moved to include/boards/<board>.h
 const uint8_t calVal_eepromAdress = 0;
 const uint16_t SCALE_LEVEL_WEIGHT = 500;
-// ***** HX711
 
-// ***** TTP223 (Touch Sensor)
-// TTP223 circuit wiring
-#if CONFIG_IDF_TARGET_ESP32S3
-const uint8_t TTP223_PIN = 7;
-#else
-const uint8_t TTP223_PIN = 25;
-#endif
-// ***** TTP223
-
+// ***** TTP223 (Touch Sensor) - Moved to include/boards/<board>.h
 
 // ***** Display
 const uint8_t OLED_TOP_START = 0;
@@ -57,10 +25,12 @@ const uint8_t webserverPort = 80;
 String filamanUrl = "";
 String filamanToken = "";
 bool filamanRegistered = false;
+
 // ***** API
 
 // ***** Display Sleep
 uint16_t oledSleepTimeout = 60; // Default 60 seconds (0 = disabled)
+
 // ***** Display Sleep
 
 // ***** WiFi
@@ -77,4 +47,5 @@ uint8_t rfidWriteTaskPrio = 1;
 
 uint8_t scaleTaskCore = 0;
 uint8_t scaleTaskPrio = 1;
+
 // ***** Task Prios

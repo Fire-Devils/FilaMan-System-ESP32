@@ -145,7 +145,7 @@ uint8_t setAutoTare(bool autoTareValue) {
   autoTare = autoTareValue;
 
   // Speichern mit NVS
-  Preferences preferences;
+  Preferences preferences;+
   preferences.begin(NVS_NAMESPACE_SCALE, false); // false = readwrite
   preferences.putBool(NVS_KEY_AUTOTARE, autoTare);
   preferences.end();
@@ -357,6 +357,11 @@ void start_scale(bool touchSensorConnected) {
 
   Serial.print("Read Scale Calibration Value ");
   Serial.println(calibrationValue);
+
+  // Force internal software pull-ups before initializing the HX711 library
+  // pinMode(LOADCELL_DOUT_PIN, INPUT_PULLUP);
+  // pinMode(LOADCELL_SCK_PIN, INPUT_PULLUP);
+  // delay(10);// Let the internal silicon pull-up voltage lines stabilize cleanly at 3.3V
 
   scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
 

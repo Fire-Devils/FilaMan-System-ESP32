@@ -10,6 +10,9 @@
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 bool wifiOn = false;
+#ifdef HAS_ETHERNET
+bool ethOn = false;
+#endif
 bool iconToggle = false;
 
 // Display priority management
@@ -103,8 +106,8 @@ DisplayPriority oledGetCurrentPriority() {
     return currentPriority;
 }
 void setupDisplay() {
-    if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-        Serial.println(F("SSD1306 allocation failed"));
+    if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS, true, false)) {
+        Serial.printf("SSD1306 allocation failed");
         for (;;); // Stoppe das Programm, wenn das Display nicht initialisiert werden kann
     }
     display.setTextColor(WHITE);
@@ -272,6 +275,10 @@ void oledShowTopRow() {
         x_pos = rightmost_x;
         if (wifiOn == 1) {
             display.drawBitmap(x_pos, 0, wifi_on , symbol_width, symbol_height, WHITE);
+        #ifdef HAS_ETHERNET
+        } else if (ethOn == 1) {
+                display.drawBitmap(x_pos, 0, eth_on, symbol_width, symbol_height, WHITE);
+        #endif
         } else {
             if(iconToggle){
                 display.drawBitmap(x_pos, 0, wifi_on , symbol_width, symbol_height, WHITE);
