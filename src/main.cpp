@@ -141,11 +141,11 @@ void loop() {
   // Handle connection errors (not registered or not connected)
   if (intervalElapsed(currentMillis, lastConnErrorShowTime, connErrorShowInterval)) {
       if (!filamanRegistered && oledCanUpdate(DISPLAY_PRIORITY_WARNING)) {
-          oledShowConnectionError(tr(STR_NOT_REGISTERED), WiFi.localIP().toString());
+          oledShowConnectionError(tr(STR_NOT_REGISTERED), getLocalIP());
           oledSetPriority(DISPLAY_PRIORITY_WARNING, 3000);
           mainTaskWasPaused = true;
       } else if (!filamanConnected && oledCanUpdate(DISPLAY_PRIORITY_WARNING)) {
-          oledShowConnectionError(tr(STR_API_CONN_LOST), WiFi.localIP().toString());
+          oledShowConnectionError(tr(STR_API_CONN_LOST), getLocalIP());
           oledSetPriority(DISPLAY_PRIORITY_WARNING, 3000);
           mainTaskWasPaused = true;
       } else if ( !scaleConnected ){

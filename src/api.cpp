@@ -210,7 +210,7 @@ bool sendRfidResult(String tagUuid, int spoolId, int locationId, bool success, S
 }
 
 bool sendTagData(String tagJson) {
-    if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
+    if (!checkFilamanRegistration() || !networkConnected()) return false;
     HTTPClient http;
     http.setTimeout(10000);
     http.setReuse(true);
