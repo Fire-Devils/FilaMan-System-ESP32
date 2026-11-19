@@ -27,7 +27,7 @@ void startNfc();
 void scanRfidTask(void * parameter);
 void startWriteJsonToTag(const bool isSpoolTag, const char* payload, int spoolId = 0, int locationId = 0);
 bool quickSpoolIdCheck(String uidString);
-bool readCompleteJsonForFastPath(); // Read complete JSON data for fast-path web interface display
+bool readCompleteJsonForFastPath(String uidString); // Read complete JSON data for fast-path web interface display
 void setScanRequest(bool active);
 
 extern TaskHandle_t RfidReaderTask;
