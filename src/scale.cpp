@@ -211,9 +211,11 @@ void scale_loop(void * parameter) {
           oledResetActivityTimer(); // Wake display on weight change
         }
 
-        // Prüfen ob die Waage korrekt genullt ist
+        // Prüfen ob die Waage korrekt genullt ist (gefilterter Wert, damit
+        // einzelne Rauschausreißer keinen Re-Tare auslösen)
         // Abweichung von 2g ignorieren
-        if (autoTare && (rawWeight > 2 && rawWeight < 7) || rawWeight < -2)
+        int16_t filteredForTare = getFilteredDisplayWeight();
+        if (autoTare && ((filteredForTare > 2 && filteredForTare < 7) || filteredForTare < -2))
         {
           scale_tare_counter++;
         }
