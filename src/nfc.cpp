@@ -26,15 +26,14 @@ static void pulsePn532Reset() {
 
 TaskHandle_t RfidReaderTask;
 // AsyncWebServerRequest* volatile activeNfcWriteRequest = nullptr; // Removed
-SemaphoreHandle_t nfcRequestMutex = NULL;
 
 JsonDocument rfidData;
 String activeSpoolId = "";
 String activeTagUuid = "";
 String lastSpoolId = "";
 String nfcJsonData = "";
-bool tagProcessed = false;
-bool isBambuTag = false;
+volatile bool tagProcessed = false;
+volatile bool isBambuTag = false;
 volatile bool nfcReadingTaskSuspendRequest = false;
 volatile bool nfcReadingTaskSuspendState = false;
 volatile bool nfcWriteInProgress = false; // Prevent any tag operations during write
@@ -115,66 +114,7 @@ bool detectBambuTag(const uint8_t* uid, uint8_t uidLength) {
 }
 
 // ##### Funktionen für RFID #####
-void payloadToJson(uint8_t *data) {
-    const char* startJson = strchr((char*)data, '{');
-    const char* endJson = strrchr((char*)data, '}');
-
-    if (startJson && endJson && endJson > startJson) {
-      String jsonString = String(startJson, endJson - startJson + 1);
-      //Serial.print("Bereinigter JSON-String: ");
-      //Serial.println(jsonString);
-
-      // JSON-Dokument verarbeiten
-      JsonDocument doc;  // Passen Sie die Größe an den JSON-Inhalt an
-      DeserializationError error = deserializeJson(doc, jsonString);
-
-      if (!error) {
-        const char* color_hex = doc["color_hex"];
-        const char* type = doc["type"];
-        int min_temp = doc["min_temp"];
-        int max_temp = doc["max_temp"];
-        const char* brand = doc["brand"];
-
-        Serial.println();
-        Serial.println("-----------------");
-        Serial.println("JSON-Parsed Data:");
-        Serial.println(color_hex);
-        Serial.println(type);
-        Serial.println(min_temp);
-        Serial.println(max_temp);
-        Serial.println(brand);
-        Serial.println("-----------------");
-        Serial.println();
-      } else {
-        Serial.print("deserializeJson() failed: ");
-        Serial.println(error.f_str());
-      }
-
-      doc.clear();
-    } else {
-        Serial.println("Kein gültiger JSON-Inhalt gefunden oder fehlerhafte Formatierung.");
-        //writeJsonToTag("{\"version\":\"1.0\",\"protocol\":\"NFC\",\"color_hex\":\"#FFFFFF\",\"type\":\"Example\",\"min_temp\":10,\"max_temp\":30,\"brand\":\"BrandName\"}");
-    }
-  }
-
-bool formatNdefTag() {
-    uint8_t ndefInit[] = { 0x03, 0x00, 0xFE }; // NDEF Initialisierungsnachricht
-    bool success = true;
-    int pageOffset = 4; // Startseite für NDEF-Daten auf NTAG2xx
-
-    Serial.println();
-    Serial.println("Formatiere NDEF-Tag...");
-
-    // Schreibe die Initialisierungsnachricht auf die ersten Seiten
-    for (int i = 0; i < sizeof(ndefInit); i += 4) {
-      if (!nfc.ntag2xx_WritePage(pageOffset + (i / 4), &ndefInit[i])) {
-          success = false;
-          break;
-      }
-    }
-
-    return success;
-}uint16_t readTagSize()
+uint16_t readTagSize()
 {
   uint8_t buffer[4];
   memset(buffer, 0, 4);
@@ -213,9 +153,11 @@ bool robustPageRead(uint8_t page, uint8_t* buffer) {
     return false;
 }
 
+// Bestimmt den NTAG-Typ ausschliesslich aus dem Capability Container (Seite 3).
+// Keine Leseproben auf Seiten ausserhalb des Datenbereichs (die koennen je nach Tag/Reader
+// fehlschlagen oder erfolgreich sein und sind daher kein verlaesslicher Indikator).
 String detectNtagType()
 {
-  // Read capability container from page 3 to determine exact NTAG type
   uint8_t ccBuffer[4];
   memset(ccBuffer, 0, 4);
 
@@ -223,10 +165,6 @@ String detectNtagType()
     Serial.println("Failed to read capability container");
     return "UNKNOWN";
   }
-
-  // Also read configuration pages to get more info
-  uint8_t configBuffer[4];
-  memset(configBuffer, 0, 4);
 
   Serial.print("Capability Container: ");
   for (int i = 0; i < 4; i++) {
@@ -236,80 +174,64 @@ String detectNtagType()
   }
   Serial.println();
 
-  // NTAG type detection based on capability container
-  // CC[2] contains the data area size in bytes / 8
+  // CC[2] = Datenbereich in Bytes / 8
   uint16_t dataAreaSize = ccBuffer[2] * 8;
-
   Serial.print("Data area size from CC: ");
   Serial.println(dataAreaSize);
 
-  // Try to read different configuration pages to determine exact type
-  String tagType = "UNKNOWN";
-
-  // Try to read page 41 (NTAG213 ends at page 39, so this should fail)
-  uint8_t testBuffer[4];
-  bool canReadPage41 = nfc.ntag2xx_ReadPage(41, testBuffer);
-
-  // Try to read page 130 (NTAG215 ends at page 129, so this should fail for NTAG213/215)
-  bool canReadPage130 = nfc.ntag2xx_ReadPage(130, testBuffer);
-
-  if (dataAreaSize <= 180 && !canReadPage41) {
+  String tagType;
+  if (ccBuffer[2] == 0x12) {
     tagType = "NTAG213";
-    Serial.println("Detected: NTAG213 (cannot read beyond page 39)");
-  } else if (dataAreaSize <= 540 && canReadPage41 && !canReadPage130) {
+  } else if (ccBuffer[2] == 0x3E) {
     tagType = "NTAG215";
-    Serial.println("Detected: NTAG215 (can read page 41, cannot read page 130)");
-  } else if (dataAreaSize <= 928 && canReadPage130) {
+  } else if (ccBuffer[2] == 0x6D) {
     tagType = "NTAG216";
-    Serial.println("Detected: NTAG216 (can read page 130)");
   } else {
-    // Fallback: use data area size from capability container
-    if (dataAreaSize <= 180) {
+    // Unbekannter CC-Wert: naechstkleineren Typ anhand der Datenbereichsgroesse waehlen
+    if (dataAreaSize <= 144) {
       tagType = "NTAG213";
-      Serial.println("Fallback detection: NTAG213 based on data area size");
-    } else if (dataAreaSize <= 540) {
+    } else if (dataAreaSize <= 504) {
       tagType = "NTAG215";
-      Serial.println("Fallback detection: NTAG215 based on data area size");
     } else {
       tagType = "NTAG216";
-      Serial.println("Fallback detection: NTAG216 based on data area size");
     }
+    Serial.print("Unbekannter CC-Wert 0x");
+    Serial.print(ccBuffer[2], HEX);
+    Serial.print(" - Fallback anhand Datenbereich: ");
+    Serial.println(tagType);
   }
 
+  Serial.print("Detected: ");
+  Serial.println(tagType);
   return tagType;
 }
 
-uint16_t getAvailableUserDataSize()
+// Verfuegbare Nutzdaten in Bytes (feste Werte je Typ)
+uint16_t getAvailableUserDataSize(const String& tagType)
 {
-  String tagType = detectNtagType();
   uint16_t userDataSize = 0;
 
   if (tagType == "NTAG213") {
     // NTAG213: User data from page 4-39 (36 pages * 4 bytes = 144 bytes)
     userDataSize = 144;
-    Serial.println("NTAG213 confirmed - 144 bytes user data available");
   } else if (tagType == "NTAG215") {
     // NTAG215: User data from page 4-129 (126 pages * 4 bytes = 504 bytes)
     userDataSize = 504;
-    Serial.println("NTAG215 confirmed - 504 bytes user data available");
   } else if (tagType == "NTAG216") {
     // NTAG216: User data from page 4-225 (222 pages * 4 bytes = 888 bytes)
     userDataSize = 888;
-    Serial.println("NTAG216 confirmed - 888 bytes user data available");
   } else {
-    // Unknown tag type, use conservative estimate
-    uint16_t tagSize = readTagSize();
-    userDataSize = tagSize - 60; // Reserve 60 bytes for headers/config
-    Serial.print("Unknown NTAG type, using conservative estimate: ");
-    Serial.println(userDataSize);
+    // Unknown tag type: konservativ wie NTAG213
+    userDataSize = 144;
+    Serial.println("Unknown NTAG type, using NTAG213 size (144 bytes) as fallback");
   }
 
   return userDataSize;
 }
 
-uint16_t getMaxUserDataPages()
+// Letzte beschreibbare User-Seite (feste Werte je Typ). Darueber liegen Config-/Lock-Seiten!
+uint16_t getMaxUserDataPages(const String& tagType)
 {
-  String tagType = detectNtagType();
   uint16_t maxPages = 0;
 
   if (tagType == "NTAG213") {
@@ -329,89 +251,22 @@ uint16_t getMaxUserDataPages()
   return maxPages;
 }
 
-bool initializeNdefStructure() {
-    // Write minimal NDEF structure without destroying the tag
-    // This creates a clean slate while preserving tag functionality
-
-    Serial.println("Initialisiere sichere NDEF-Struktur...");
-
-    // Minimal NDEF structure: TLV with empty message
-    uint8_t minimalNdef[8] = {
-        0x03,           // NDEF Message TLV Tag
-        0x03,           // Length (3 bytes for minimal empty record)
-        0xD0,           // NDEF Record Header (TNF=0x0:Empty + SR + ME + MB)
-        0x00,           // Type Length (0 = empty record)
-        0x00,           // Payload Length (0 = empty record)
-        0xFE,           // Terminator TLV
-        0x00, 0x00      // Padding
-    };
-
-    // Write the minimal structure starting at page 4
-    uint8_t pageBuffer[4];
-
-    for (int i = 0; i < 8; i += 4) {
-        memcpy(pageBuffer, &minimalNdef[i], 4);
-
-        if (!nfc.ntag2xx_WritePage(4 + (i / 4), pageBuffer)) {
-            Serial.print("Fehler beim Initialisieren von Seite ");
-            Serial.println(4 + (i / 4));
-            return false;
-        }
-
-        Serial.print("Seite ");
-        Serial.print(4 + (i / 4));
-        Serial.print(" initialisiert: ");
-        for (int j = 0; j < 4; j++) {
-            if (pageBuffer[j] < 0x10) Serial.print("0");
-            Serial.print(pageBuffer[j], HEX);
-            Serial.print(" ");
-        }
-        Serial.println();
-    }
-
-    Serial.println("✓ Sichere NDEF-Struktur initialisiert");
-    Serial.println("✓ Tag bleibt funktionsfähig und überschreibbar");
-    return true;
-}
-
-bool clearUserDataArea() {
-    // IMPORTANT: Only clear user data pages, NOT configuration pages
-    // NTAG layout: Pages 0-3 (header), 4-N (user data), N+1-N+3 (config) - NEVER touch config!
-    String tagType = detectNtagType();
-
-    // Calculate safe user data page ranges (NEVER touch config pages!)
-    uint16_t firstUserPage = 4;
-    uint16_t lastUserPage = 0;
-
-    if (tagType == "NTAG213") {
-        lastUserPage = 39;  // Pages 40-42 are config - DO NOT TOUCH!
-        Serial.println("NTAG213: Sichere Löschung Seiten 4-39");
-    } else if (tagType == "NTAG215") {
-        lastUserPage = 129; // Pages 130-132 are config - DO NOT TOUCH!
-        Serial.println("NTAG215: Sichere Löschung Seiten 4-129");
-    } else if (tagType == "NTAG216") {
-        lastUserPage = 225; // Pages 226-228 are config - DO NOT TOUCH!
-        Serial.println("NTAG216: Sichere Löschung Seiten 4-225");
-    } else {
-        // Conservative fallback - only clear a small safe area
-        lastUserPage = 39;
-        Serial.println("UNKNOWN TAG: Konservative Löschung Seiten 4-39");
-    }
-
-    Serial.println("WARNUNG: Vollständiges Löschen kann Tag beschädigen!");
-    Serial.println("Verwende stattdessen selective NDEF-Überschreibung...");
-
-    // Instead of clearing everything, just write a minimal NDEF structure
-    // This is much safer and preserves tag integrity
-    return initializeNdefStructure();
+// Liefert die lesbare Tag-Groesse (aus CC), begrenzt auf 888 Bytes und auf Vielfache von 4.
+// Rueckgabe 0 = nicht lesbar / kein NTAG.
+static uint16_t getReadableTagSize()
+{
+  uint16_t tagSize = readTagSize();
+  if (tagSize > 888) tagSize = 888;
+  tagSize &= ~((uint16_t)3);
+  return tagSize;
 }
 
 uint8_t ntag2xx_WriteNDEF(const char *payload) {
-  // Determine exact tag type and capabilities first
+  // Determine exact tag type and capabilities first (Typ nur einmal ermitteln)
   String tagType = detectNtagType();
   uint16_t tagSize = readTagSize();
-  uint16_t availableUserData = getAvailableUserDataSize();
-  uint16_t maxWritablePage = getMaxUserDataPages();
+  uint16_t availableUserData = getAvailableUserDataSize(tagType);
+  uint16_t maxWritablePage = getMaxUserDataPages(tagType);
 
   Serial.println("=== NFC TAG ANALYSIS ===");
   Serial.print("Tag Type: ");Serial.println(tagType);
@@ -420,76 +275,22 @@ uint8_t ntag2xx_WriteNDEF(const char *payload) {
   Serial.print("Max Writable Page: ");Serial.println(maxWritablePage);
   Serial.println("========================");
 
-  // Perform additional tag validation by testing write boundaries
-  Serial.println("=== TAG VALIDATION ===");
-  uint8_t testBuffer[4] = {0x00, 0x00, 0x00, 0x00};
-
-  // Test if we can actually read the max page
-  if (!nfc.ntag2xx_ReadPage(maxWritablePage, testBuffer)) {
-    Serial.print("WARNING: Cannot read declared max page ");
-    Serial.println(maxWritablePage);
-
-    // Find actual maximum writable page by testing backwards with optimized approach
-    uint16_t actualMaxPage = maxWritablePage;
-    Serial.println("Searching for actual maximum writable page...");
-
-    // Use binary search approach for faster page limit detection
-    uint16_t lowPage = 4;
-    uint16_t highPage = maxWritablePage;
-    uint16_t testAttempts = 0;
-    const uint16_t maxTestAttempts = 15; // Limit search attempts
-
-    while (lowPage <= highPage && testAttempts < maxTestAttempts) {
-      uint16_t midPage = (lowPage + highPage) / 2;
-      testAttempts++;
-
-      Serial.print("Testing page ");
-      Serial.print(midPage);
-      Serial.print(" (attempt ");
-      Serial.print(testAttempts);
-      Serial.print("/");
-      Serial.print(maxTestAttempts);
-      Serial.print(")... ");
-
-      if (nfc.ntag2xx_ReadPage(midPage, testBuffer)) {
-        Serial.println("✓");
-        actualMaxPage = midPage;
-        lowPage = midPage + 1; // Search higher
-      } else {
-        Serial.println("❌");
-        highPage = midPage - 1; // Search lower
-      }
-
-      // Small delay to prevent interface overload
-      vTaskDelay(pdMS_TO_TICKS(5));
-      yield();
-    }
-
-    Serial.print("Found actual max readable page: ");
-    Serial.println(actualMaxPage);
-    Serial.print("Search completed in ");
-    Serial.print(testAttempts);
-    Serial.println(" attempts");
-
-    maxWritablePage = actualMaxPage;
-  } else {
-    Serial.print("✓ Max page ");Serial.print(maxWritablePage);Serial.println(" is readable");
-  }
-
-  // Calculate maximum available user data based on actual writable pages
-  uint16_t actualUserDataSize = (maxWritablePage - 3) * 4; // -3 because pages 0-3 are header
-  availableUserData = actualUserDataSize;
-
-  Serial.print("Actual available user data: ");
-  Serial.print(actualUserDataSize);
-  Serial.println(" bytes");
-  Serial.println("========================");
-
   uint8_t pageBuffer[4] = {0, 0, 0, 0};
   Serial.println("Beginne mit dem Schreiben der NDEF-Nachricht...");
 
   // Figure out how long the string is
-  uint16_t payloadLen = strlen(payload);
+  size_t payloadLenRaw = strlen(payload);
+  if (payloadLenRaw > availableUserData) {
+    // Passt sicher nicht auf den Tag (verhindert auch Ueberlauf von uint16_t)
+    Serial.print("FEHLER: Payload zu gross: ");
+    Serial.println((unsigned int)payloadLenRaw);
+    oledDisplayText(tr(STR_TAG_TOO_SMALL));
+    oledSetPriority(DISPLAY_PRIORITY_WARNING, 3000);
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    oledClearPriority();
+    return 0;
+  }
+  uint16_t payloadLen = (uint16_t)payloadLenRaw;
   Serial.print("Länge der Payload: ");
   Serial.println(payloadLen);
 
@@ -500,7 +301,9 @@ uint8_t ntag2xx_WriteNDEF(const char *payload) {
   uint8_t mimeTypeLen = strlen(mimeType);
 
   // Calculate NDEF record size
-  uint8_t ndefRecordHeaderSize = 3; // Header byte + Type Length + Payload Length (short record)
+  // Short Record (payload <= 255): Header + Type Length + 1 Byte Payload Length = 3
+  // Normal Record (payload > 255):  Header + Type Length + 4 Byte Payload Length = 6
+  uint8_t ndefRecordHeaderSize = (payloadLen <= 255) ? 3 : 6;
   uint16_t ndefRecordSize = ndefRecordHeaderSize + mimeTypeLen + payloadLen;
 
   // Calculate TLV size - need to check if we need extended length format
@@ -709,15 +512,13 @@ uint8_t ntag2xx_WriteNDEF(const char *payload) {
   Serial.println();
   Serial.println("=== SCHRITT 3: SCHREIBBEREITSCHAFTSTEST ===");
 
-  // Test write capabilities before attempting the full write
-  Serial.println("Teste Schreibfähigkeiten des Tags...");
+  // Reiner Lesetest (kein Testschreibzugriff, damit keine Tag-Daten veraendert werden)
+  Serial.println("Teste Lesezugriff auf Nutzdaten des Tags...");
 
-  uint8_t testPage[4] = {0xAA, 0xBB, 0xCC, 0xDD}; // Test pattern
-  uint8_t originalPage[4]; // Store original content
+  uint8_t originalPage[4];
 
-  // First, read original content of test page
   if (!nfc.ntag2xx_ReadPage(10, originalPage)) {
-    Serial.println("FEHLER: Kann Testseite nicht lesen für Backup");
+    Serial.println("FEHLER: Kann Testseite nicht lesen");
     oledDisplayText(tr(STR_TEST_READ_ERROR));
     oledSetPriority(DISPLAY_PRIORITY_WARNING, 3000);
     vTaskDelay(pdMS_TO_TICKS(3000));
@@ -726,7 +527,7 @@ uint8_t ntag2xx_WriteNDEF(const char *payload) {
     return 0;
   }
 
-  Serial.print("Original Inhalt Seite 10: ");
+  Serial.print("Inhalt Seite 10: ");
   for (int i = 0; i < 4; i++) {
     if (originalPage[i] < 0x10) Serial.print("0");
     Serial.print(originalPage[i], HEX);
@@ -734,121 +535,12 @@ uint8_t ntag2xx_WriteNDEF(const char *payload) {
   }
   Serial.println();
 
-  // Perform write test
-  if (!nfc.ntag2xx_WritePage(10, testPage)) {
-    Serial.println("FEHLER: Schreibtest fehlgeschlagen!");
-    Serial.println("Tag ist möglicherweise schreibgeschützt oder defekt");
-
-    // Additional diagnostics
-    Serial.println("=== ERWEITERTE SCHREIBTEST-DIAGNOSE ===");
-
-    // Check if tag is still present
-    uint8_t uid[] = { 0, 0, 0, 0, 0, 0, 0 };
-    uint8_t uidLength;
-    bool tagStillPresent = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 1000);
-    Serial.print("Tag noch erkannt: ");
-    Serial.println(tagStillPresent ? "✓" : "❌");
-
-    if (!tagStillPresent) {
-      Serial.println("URSACHE: Tag wurde während Schreibtest entfernt!");
-      oledDisplayText(tr(STR_TAG_REMOVED));
-      oledSetPriority(DISPLAY_PRIORITY_WARNING, 3000);
-    } else {
-      Serial.println("URSACHE: Tag ist vorhanden aber nicht beschreibbar");
-      Serial.println("Möglicherweise: Schreibschutz, Defekt, oder Interface-Problem");
-      oledDisplayText(tr(STR_TAG_WRITE_PROT));
-      oledSetPriority(DISPLAY_PRIORITY_WARNING, 3000);
-    }
-    Serial.println("==========================================");
-
-    vTaskDelay(pdMS_TO_TICKS(3000));
-    oledClearPriority();
-
-    return 0;
-  }
-
-  // Verify test write
-  uint8_t readBack[4];
-  vTaskDelay(pdMS_TO_TICKS(20)); // Wait for write to complete
-
-  if (!nfc.ntag2xx_ReadPage(10, readBack)) {
-    Serial.println("FEHLER: Kann Testdaten nicht zurücklesen!");
-    oledDisplayText(tr(STR_TEST_VERIFY_FAIL));
-    oledSetPriority(DISPLAY_PRIORITY_WARNING, 3000);
-    vTaskDelay(pdMS_TO_TICKS(3000));
-    oledClearPriority();
-
-    return 0;
-  }
-
-  bool testSuccess = true;
-  for (int i = 0; i < 4; i++) {
-    if (readBack[i] != testPage[i]) {
-      testSuccess = false;
-      break;
-    }
-  }
-
-  if (!testSuccess) {
-    Serial.println("FEHLER: Schreibtest fehlgeschlagen - Daten stimmen nicht überein!");
-    Serial.print("Geschrieben: ");
-    for (int i = 0; i < 4; i++) {
-      Serial.print(testPage[i], HEX); Serial.print(" ");
-    }
-    Serial.println();
-    Serial.print("Gelesen: ");
-    for (int i = 0; i < 4; i++) {
-      Serial.print(readBack[i], HEX); Serial.print(" ");
-    }
-    Serial.println();
-    return 0;
-  }
-
-  // Restore original content
-  Serial.println("Stelle ursprünglichen Inhalt wieder her...");
-  if (!nfc.ntag2xx_WritePage(10, originalPage)) {
-    Serial.println("WARNUNG: Konnte ursprünglichen Inhalt nicht wiederherstellen!");
-  } else {
-    Serial.println("✓ Ursprünglicher Inhalt wiederhergestellt");
-  }
-
-  Serial.println("✓ Schreibtest erfolgreich - Tag ist voll funktionsfähig");
+  Serial.println("✓ Lesetest erfolgreich");
   Serial.println("======================================================");
 
-  // STEP 4: NDEF initialization with verification
-  Serial.println();
-  Serial.println("=== SCHRITT 4: NDEF-INITIALISIERUNG ===");
-  if (!initializeNdefStructure()) {
-    Serial.println("FEHLER: Konnte NDEF-Struktur nicht initialisieren!");
-    oledDisplayText(tr(STR_NDEF_INIT_FAILED));
-    oledSetPriority(DISPLAY_PRIORITY_WARNING, 2000);
-    vTaskDelay(pdMS_TO_TICKS(2000));
-    oledClearPriority();
-    return 0;
-  }
-
-  // Verify NDEF initialization
-  uint8_t ndefCheck[8];
-  bool ndefVerified = true;
-  for (uint8_t page = 4; page < 6; page++) {
-    if (!nfc.ntag2xx_ReadPage(page, &ndefCheck[(page-4)*4])) {
-      ndefVerified = false;
-      break;
-    }
-  }
-
-  if (ndefVerified) {
-    Serial.print("NDEF-Header nach Initialisierung: ");
-    for (int i = 0; i < 8; i++) {
-      if (ndefCheck[i] < 0x10) Serial.print("0");
-      Serial.print(ndefCheck[i], HEX);
-      Serial.print(" ");
-    }
-    Serial.println();
-  }
-
-  Serial.println("✓ NDEF-Struktur initialisiert und verifiziert");
-  Serial.println("==========================================");
+  // HINWEIS: Die alte NDEF-Struktur wird NICHT vorab ueberschrieben. Die Hauptschreibschleife
+  // schreibt zuerst die Seiten ab Seite 5 und zuletzt Seite 4 (TLV-Kopf). Seite 4 wird dabei
+  // vollstaendig ueberschrieben, eine vorherige Initialisierung ist daher unnoetig.
 
   // STEP 5: Allow interface to stabilize before major write operation
   Serial.println();
@@ -917,9 +609,18 @@ uint8_t ntag2xx_WriteNDEF(const char *payload) {
   }
 
   // NDEF Record Header
-  tlvData[offset++] = 0xD2; // NDEF Record Header (TNF=0x2:MIME Media + SR + ME + MB)
-  tlvData[offset++] = mimeTypeLen; // Type Length
-  tlvData[offset++] = (uint8_t)payloadLen; // Payload Length (short record format)
+  if (payloadLen <= 255) {
+    tlvData[offset++] = 0xD2; // NDEF Record Header (TNF=0x2:MIME Media + SR + ME + MB)
+    tlvData[offset++] = mimeTypeLen; // Type Length
+    tlvData[offset++] = (uint8_t)payloadLen; // Payload Length (short record format)
+  } else {
+    tlvData[offset++] = 0xC2; // NDEF Record Header (TNF=0x2:MIME Media + ME + MB, kein SR)
+    tlvData[offset++] = mimeTypeLen; // Type Length
+    tlvData[offset++] = 0x00; // Payload Length (4 Byte, Big Endian)
+    tlvData[offset++] = 0x00;
+    tlvData[offset++] = (uint8_t)(payloadLen >> 8);
+    tlvData[offset++] = (uint8_t)(payloadLen & 0xFF);
+  }
 
   // MIME Type
   memcpy(&tlvData[offset], mimeType, mimeTypeLen);
@@ -946,21 +647,39 @@ uint8_t ntag2xx_WriteNDEF(const char *payload) {
   Serial.println();
 
   // Write data to tag pages (starting from page 4)
+  // Reihenfolge: zuerst alle Seiten ab Seite 5, ZULETZT Seite 4 (enthaelt den TLV-Kopf).
+  // Bei Abbruch bleibt so entweder der alte Kopf mit teils neuen Daten (vom Parser als
+  // ungueltig erkannt) oder der komplett neue Inhalt - nie "leer aber erfolgreich".
   uint16_t bytesWritten = 0;
-  uint8_t pageNumber = 4;
   uint16_t totalBytes = offset + 1;
+  uint16_t totalPages = (totalBytes + 3) / 4;
+  uint16_t pageNumber = 4;
 
   Serial.println();
   Serial.println("=== SCHRITT 6: SCHREIBE NEUE NDEF-DATEN ===");
   Serial.print("Schreibe ");
   Serial.print(totalBytes);
   Serial.print(" Bytes in ");
-  Serial.print((totalBytes + 3) / 4); // Round up division
+  Serial.print(totalPages);
   Serial.println(" Seiten...");
 
-  while (bytesWritten < totalBytes && pageNumber <= maxWritablePage) {
+  // Harte Grenze: nie auf eine Seite > letzte User-Seite schreiben
+  if ((uint32_t)4 + totalPages - 1 > maxWritablePage) {
+    Serial.print("FEHLER: Daten wuerden Seite ");
+    Serial.print(maxWritablePage);
+    Serial.println(" ueberschreiten - Abbruch ohne Schreiben");
+    free(tlvData);
+    return 0;
+  }
+
+  for (uint16_t step = 0; step < totalPages; step++) {
+    // step 0..n-2 -> Seitenindex 1..n-1 (Seite 5..), letzter Schritt -> Seitenindex 0 (Seite 4)
+    uint16_t pageIdx = (step + 1 < totalPages) ? (step + 1) : 0;
+    pageNumber = 4 + pageIdx;
+    uint16_t byteOffset = pageIdx * 4;
+
     // Additional safety check before writing each page
-    if (pageNumber > maxWritablePage) {
+    if (pageNumber > maxWritablePage || byteOffset >= totalBytes) {
       Serial.print("STOP: Reached maximum writable page ");
       Serial.println(maxWritablePage);
       break;
@@ -970,15 +689,16 @@ uint8_t ntag2xx_WriteNDEF(const char *payload) {
     memset(pageBuffer, 0, 4);
 
     // Calculate how many bytes to write to this page
-    uint16_t bytesToWrite = min(4, (int)(totalBytes - bytesWritten));
+    uint16_t remaining = totalBytes - byteOffset;
+    uint16_t bytesToWrite = remaining < 4 ? remaining : 4;
 
     // Copy data to page buffer
-    memcpy(pageBuffer, &tlvData[bytesWritten], bytesToWrite);
+    memcpy(pageBuffer, &tlvData[byteOffset], bytesToWrite);
 
     // Write page to tag with retry mechanism
     bool writeSuccess = false;
     for (int writeAttempt = 0; writeAttempt < 3; writeAttempt++) {
-      if (nfc.ntag2xx_WritePage(pageNumber, pageBuffer)) {
+      if (nfc.ntag2xx_WritePage((uint8_t)pageNumber, pageBuffer)) {
         writeSuccess = true;
         break;
       } else {
@@ -1001,13 +721,6 @@ uint8_t ntag2xx_WriteNDEF(const char *payload) {
       Serial.println(tagType);
       Serial.print("Erwartetes Maximum: ");
       Serial.println(maxWritablePage);
-      Serial.print("Tatsächliches Maximum scheint niedriger zu sein!");
-
-      // Update max page for future operations
-      if (pageNumber > 4) {
-        Serial.print("Setze neues Maximum auf Seite ");
-        Serial.println(pageNumber - 1);
-      }
 
       free(tlvData);
       return 0;
@@ -1024,7 +737,7 @@ uint8_t ntag2xx_WriteNDEF(const char *payload) {
     // Verification with retry mechanism
     bool verifySuccess = false;
     for (int verifyAttempt = 0; verifyAttempt < 3; verifyAttempt++) {
-      if (nfc.ntag2xx_ReadPage(pageNumber, verifyBuffer)) {
+      if (nfc.ntag2xx_ReadPage((uint8_t)pageNumber, verifyBuffer)) {
         bool writeMatches = true;
         for (int i = 0; i < bytesToWrite; i++) {
           if (verifyBuffer[i] != pageBuffer[i]) {
@@ -1078,7 +791,6 @@ uint8_t ntag2xx_WriteNDEF(const char *payload) {
     Serial.println();
 
     bytesWritten += bytesToWrite;
-    pageNumber++;
 
     yield();
     vTaskDelay(pdMS_TO_TICKS(10)); // Slightly increased delay between page writes
@@ -1094,7 +806,7 @@ uint8_t ntag2xx_WriteNDEF(const char *payload) {
     Serial.print(totalBytes);
     Serial.println(" Bytes");
     Serial.print("Gestoppt bei Seite: ");
-    Serial.println(pageNumber - 1);
+    Serial.println(pageNumber);
     return 0;
   }
 
@@ -1102,7 +814,7 @@ uint8_t ntag2xx_WriteNDEF(const char *payload) {
   Serial.println("✓ NDEF-Nachricht erfolgreich geschrieben!");
   Serial.print("✓ Tag-Typ: ");Serial.println(tagType);
   Serial.print("✓ Insgesamt ");Serial.print(bytesWritten);Serial.println(" Bytes geschrieben");
-  Serial.print("✓ Verwendete Seiten: 4-");Serial.println(pageNumber - 1);
+  Serial.print("✓ Verwendete Seiten: 4-");Serial.println(4 + totalPages - 1);
   Serial.print("✓ Speicher-Auslastung: ");
   Serial.print((bytesWritten * 100) / availableUserData);
   Serial.println("%");
@@ -1163,13 +875,20 @@ uint8_t ntag2xx_WriteNDEF(const char *payload) {
   return 1;
 }
 
-bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
+// bufferSize = Anzahl gueltiger Bytes in encodedMessage (Puffer beginnt bei Seite 4).
+bool decodeNdefAndReturnJson(const byte* encodedMessage, size_t bufferSize, String uidString) {
   oledShowProgressBar(1, 4, tr(STR_READING), tr(STR_DECODING_DATA));
   oledSetPriority(DISPLAY_PRIORITY_ACTION, 1500);
 
-  // Debug: Print first 32 bytes of the raw data
+  if (encodedMessage == nullptr || bufferSize < 4) {
+    Serial.println("NDEF decode: buffer too small");
+    return false;
+  }
+
+  // Debug: Print first 32 bytes (or less) of the raw data
+  size_t dumpLen = bufferSize < 32 ? bufferSize : 32;
   Serial.println("Raw NDEF data (first 32 bytes):");
-  for (int i = 0; i < 32; i++) {
+  for (size_t i = 0; i < dumpLen; i++) {
     if (encodedMessage[i] < 0x10) Serial.print("0");
     Serial.print(encodedMessage[i], HEX);
     Serial.print(" ");
@@ -1178,16 +897,17 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
   Serial.println();
 
   // Look for the NDEF TLV structure starting from the beginning
-  int tlvOffset = 0;
+  size_t tlvOffset = 0;
   bool foundNdefTlv = false;
 
   // Search for NDEF TLV (0x03) in the first few bytes
-  for (int i = 0; i < 16; i++) {
+  size_t searchLen = bufferSize < 16 ? bufferSize : 16;
+  for (size_t i = 0; i < searchLen; i++) {
     if (encodedMessage[i] == 0x03) {
       tlvOffset = i;
       foundNdefTlv = true;
       Serial.print("Found NDEF TLV at offset: ");
-      Serial.println(tlvOffset);
+      Serial.println((unsigned int)tlvOffset);
       break;
     }
   }
@@ -1198,12 +918,21 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
   }
 
   // Get the NDEF message length from TLV
-  uint16_t ndefMessageLength = 0;
-  int ndefRecordOffset = 0;
+  uint32_t ndefMessageLength = 0;
+  size_t ndefRecordOffset = 0;
+
+  if (tlvOffset + 2 > bufferSize) {
+    Serial.println("Invalid NDEF structure - TLV length beyond buffer");
+    return false;
+  }
 
   if (encodedMessage[tlvOffset + 1] == 0xFF) {
     // Extended length format: next 2 bytes contain the actual length
-    ndefMessageLength = (encodedMessage[tlvOffset + 2] << 8) | encodedMessage[tlvOffset + 3];
+    if (tlvOffset + 4 > bufferSize) {
+      Serial.println("Invalid NDEF structure - extended TLV length beyond buffer");
+      return false;
+    }
+    ndefMessageLength = ((uint32_t)encodedMessage[tlvOffset + 2] << 8) | encodedMessage[tlvOffset + 3];
     ndefRecordOffset = tlvOffset + 4; // Skip TLV tag + 0xFF + 2 length bytes
     Serial.print("NDEF Message Length (extended): ");
   } else {
@@ -1214,8 +943,15 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
   }
   Serial.println(ndefMessageLength);
 
-  // Get pointer to NDEF record
+  // Need at least record header + type length + 1 byte payload length
+  if (ndefRecordOffset + 3 > bufferSize) {
+    Serial.println("Invalid NDEF structure - record header beyond buffer");
+    return false;
+  }
+
+  // Get pointer to NDEF record; recordAvail = bytes available from the record start
   const byte* ndefRecord = &encodedMessage[ndefRecordOffset];
+  size_t recordAvail = bufferSize - ndefRecordOffset;
 
   // Parse NDEF record header
   byte recordHeader = ndefRecord[0];
@@ -1228,8 +964,8 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
 
   // Determine payload length (can be 1 or 4 bytes depending on SR flag)
   uint32_t payloadLength = 0;
-  byte payloadLengthBytes = 1;
-  byte payloadLengthOffset = 2;
+  size_t payloadLengthBytes = 1;
+  size_t payloadLengthOffset = 2;
 
   // Check if Short Record (SR) flag is set (bit 4)
   if (recordHeader & 0x10) { // SR flag
@@ -1238,8 +974,12 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
     payloadLengthOffset = 2;
   } else {
     // Long record format (4 bytes for payload length)
-    payloadLength = (ndefRecord[2] << 24) | (ndefRecord[3] << 16) |
-                   (ndefRecord[4] << 8) | ndefRecord[5];
+    if (recordAvail < 6) {
+      Serial.println("Invalid NDEF structure - long payload length beyond buffer");
+      return false;
+    }
+    payloadLength = ((uint32_t)ndefRecord[2] << 24) | ((uint32_t)ndefRecord[3] << 16) |
+                    ((uint32_t)ndefRecord[4] << 8) | (uint32_t)ndefRecord[5];
     payloadLengthBytes = 4;
     payloadLengthOffset = 2;
   }
@@ -1247,43 +987,60 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
   Serial.print("Payload Length: ");
   Serial.println(payloadLength);
   Serial.print("Payload Length Bytes: ");
-  Serial.println(payloadLengthBytes);
+  Serial.println((unsigned int)payloadLengthBytes);
 
   // Check for ID field (if IL flag is set)
-  byte idLength = 0;
+  size_t idLength = 0;
   if (recordHeader & 0x08) { // IL flag
+    if (payloadLengthOffset + payloadLengthBytes >= recordAvail) {
+      Serial.println("Invalid NDEF structure - ID length beyond buffer");
+      return false;
+    }
     idLength = ndefRecord[payloadLengthOffset + payloadLengthBytes];
     Serial.print("ID Length: ");
-    Serial.println(idLength);
+    Serial.println((unsigned int)idLength);
   }
 
   // Calculate offset to payload
-  byte payloadOffset = 1 + 1 + payloadLengthBytes + typeLength + idLength;
+  // Layout: Header, TypeLen, PayloadLen(1|4), [IDLen], Type, [ID], Payload
+  size_t idLenFieldSize = (recordHeader & 0x08) ? 1 : 0;
+  size_t payloadOffset = 1 + 1 + payloadLengthBytes + idLenFieldSize + typeLength + idLength;
 
   Serial.print("Calculated payload offset: ");
-  Serial.println(payloadOffset);
+  Serial.println((unsigned int)payloadOffset);
 
-  // Verify we have enough data
-  if (payloadOffset + payloadLength > ndefMessageLength) {
+  // Verify we have enough data (64 bit to avoid overflow with huge declared lengths)
+  uint64_t payloadEnd = (uint64_t)payloadOffset + payloadLength;
+  if (payloadEnd > ndefMessageLength) {
     Serial.println("Invalid NDEF structure - payload extends beyond message");
     Serial.print("Payload offset + length: ");
-    Serial.print(payloadOffset + payloadLength);
+    Serial.print((unsigned long)payloadEnd);
     Serial.print(", NDEF message length: ");
     Serial.println(ndefMessageLength);
     return false;
   }
+  if (payloadEnd > recordAvail) {
+    Serial.println("Invalid NDEF structure - payload extends beyond read buffer");
+    Serial.print("Payload end: ");
+    Serial.print((unsigned long)payloadEnd);
+    Serial.print(", available: ");
+    Serial.println((unsigned int)recordAvail);
+    return false;
+  }
 
-  // Print the record type for debugging
+  // Print the record type for debugging (typeLength is within buffer: payloadOffset <= payloadEnd <= recordAvail)
   Serial.print("Record Type: ");
-  for (int i = 0; i < typeLength; i++) {
-    Serial.print((char)ndefRecord[1 + 1 + payloadLengthBytes + i]);
+  for (size_t i = 0; i < typeLength; i++) {
+    Serial.print((char)ndefRecord[1 + 1 + payloadLengthBytes + idLenFieldSize + i]);
   }
   Serial.println();
 
-  nfcJsonData = "";
+  // JSON lokal aufbauen (nfcJsonData wird von anderen Tasks gelesen) und am Ende einmal zuweisen
+  String jsonLocal = "";
 
   // Extract JSON payload with validation
   uint32_t actualJsonLength = 0;
+  int braceCount = 0;
   for (uint32_t i = 0; i < payloadLength; i++) {
     byte currentByte = ndefRecord[payloadOffset + i];
 
@@ -1296,7 +1053,7 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
 
     // Only add printable characters and common JSON characters
     if (currentByte >= 32 && currentByte <= 126) {
-      nfcJsonData += (char)currentByte;
+      jsonLocal += (char)currentByte;
       actualJsonLength++;
     } else {
       Serial.print("Skipping non-printable byte at position ");
@@ -1305,43 +1062,40 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, String uidString) {
       Serial.println(currentByte, HEX);
     }
 
-    // Check if we've reached the end of a JSON object
-    if (currentByte == '}') {
-      // Count opening and closing braces to detect complete JSON
-      int braceCount = 0;
-      for (uint32_t j = 0; j <= i; j++) {
-        if (ndefRecord[payloadOffset + j] == '{') braceCount++;
-        else if (ndefRecord[payloadOffset + j] == '}') braceCount--;
-      }
+    if (currentByte == '{') braceCount++;
+    else if (currentByte == '}') braceCount--;
 
-      if (braceCount == 0) {
-        Serial.print("Found complete JSON object at position: ");
-        Serial.println(i);
-        actualJsonLength = i + 1;
-        break;
-      }
+    // Check if we've reached the end of a JSON object
+    if (currentByte == '}' && braceCount == 0) {
+      Serial.print("Found complete JSON object at position: ");
+      Serial.println(i);
+      actualJsonLength = i + 1;
+      break;
     }
   }
 
   Serial.print("Actual JSON length extracted: ");
   Serial.println(actualJsonLength);
   Serial.print("Total nfcJsonData length: ");
-  Serial.println(nfcJsonData.length());
+  Serial.println(jsonLocal.length());
   Serial.println("=== DECODED JSON DATA START ===");
-  Serial.println(nfcJsonData);
+  Serial.println(jsonLocal);
   Serial.println("=== DECODED JSON DATA END ===");
 
   // Check if JSON was truncated
-  if (nfcJsonData.length() < payloadLength && !nfcJsonData.endsWith("}")) {
+  if (jsonLocal.length() < payloadLength && !jsonLocal.endsWith("}")) {
     Serial.println("WARNING: JSON payload appears to be truncated!");
     Serial.print("Expected payload length: ");
     Serial.println(payloadLength);
     Serial.print("Actual extracted length: ");
-    Serial.println(nfcJsonData.length());
+    Serial.println(jsonLocal.length());
   }
 
   // Trim any trailing whitespace or invalid characters
-  nfcJsonData.trim();
+  jsonLocal.trim();
+
+  // Einmalige Zuweisung an die globale Variable
+  nfcJsonData = jsonLocal;
 
   // JSON-Dokument verarbeiten
   JsonDocument doc;
@@ -1442,7 +1196,7 @@ bool readCompleteJsonForFastPath() {
     Serial.println("=== FAST-PATH: Reading complete JSON for web interface ===");
 
     // Read tag size first
-    uint16_t tagSize = readTagSize();
+    uint16_t tagSize = getReadableTagSize();
     if (tagSize == 0) {
         Serial.println("FAST-PATH: Could not determine tag size");
         return false;
@@ -1457,9 +1211,10 @@ bool readCompleteJsonForFastPath() {
     memset(data, 0, tagSize);
 
     // Read all pages
-    uint8_t numPages = tagSize / 4;
-    for (uint8_t i = 4; i < 4 + numPages; i++) {
-        if (!robustPageRead(i, data + (i - 4) * 4)) {
+    uint16_t numPages = tagSize / 4;
+    for (uint16_t i = 4; i < 4 + numPages; i++) {
+        if ((uint32_t)(i - 4) * 4 + 4 > tagSize) break; // Pufferschutz
+        if (!robustPageRead((uint8_t)i, data + (i - 4) * 4)) {
             Serial.printf("FAST-PATH: Failed to read page %d\n", i);
             free(data);
             return false;
@@ -1477,7 +1232,7 @@ bool readCompleteJsonForFastPath() {
     }
 
     // Decode NDEF and extract JSON
-    bool success = decodeNdefAndReturnJson(data, ""); // Empty UID string for fast-path
+    bool success = decodeNdefAndReturnJson(data, tagSize, ""); // Empty UID string for fast-path
 
     free(data);
 
@@ -1747,6 +1502,18 @@ void writeJsonToTag(void *parameter) {
   // Do NOT suspend the reading task - we need NFC interface for verification
   // Just use nfcWriteInProgress to prevent scanning and fast-path operations
   Serial.println("NFC Write Task starting - High-level operations blocked, low-level NFC available");
+
+  // Vor dem ersten PN532-Zugriff warten, bis der Reader-Task pausiert ist (max. 2 s)
+  {
+    uint16_t waitedMs = 0;
+    while (!nfcReadingTaskSuspendState && waitedMs < 2000) {
+      vTaskDelay(pdMS_TO_TICKS(10));
+      waitedMs += 10;
+    }
+    if (!nfcReadingTaskSuspendState) {
+      Serial.println("WARNUNG: Reader-Task nach 2s noch nicht pausiert - schreibe trotzdem");
+    }
+  }
 
   // aktualisieren der Website wenn sich der Status ändert
   sendNfcData();
@@ -2152,6 +1919,15 @@ void scanRfidTask(void * parameter) {
         Serial.println("Tag detected, stabilizing...");
         vTaskDelay(pdMS_TO_TICKS(500)); // Increased from 200ms for reliable reads
 
+        // Wurde waehrend der Stabilisierung ein Schreibvorgang/Suspend angefordert? Dann Durchlauf abbrechen
+        if (nfcWriteInProgress || nfcReadingTaskSuspendRequest) {
+          Serial.println("NFC: Schreib-/Suspend-Anforderung waehrend Lesevorgang - Durchlauf abgebrochen");
+          nfcReaderState = NFC_IDLE;
+          pauseMainTask = 0;
+          oledClearPriority();
+          continue;
+        }
+
         // create Tag UID string
         String uidString = "";
         for (uint8_t i = 0; i < uidLength; i++) {
@@ -2178,11 +1954,19 @@ void scanRfidTask(void * parameter) {
 
           Serial.println("Continuing with full tag read after fast-path check");
 
-          uint16_t tagSize = readTagSize();
+          uint16_t tagSize = getReadableTagSize();
           if(tagSize > 0)
           {
             // Create a buffer depending on the size of the tag
             uint8_t* data = (uint8_t*)malloc(tagSize);
+            if (data == NULL) {
+              Serial.println("Fehler: Nicht genug Speicher fuer Tag-Daten");
+              oledShowProgressBar(1, 1, tr(STR_FAILURE), tr(STR_TAG_READ_ERROR));
+              oledSetPriority(DISPLAY_PRIORITY_WARNING, 2000);
+              nfcReaderState = NFC_READ_ERROR;
+            }
+            else
+            {
             memset(data, 0, tagSize);
 
             // We probably have an NTAG2xx card (though it could be Ultralight as well)
@@ -2191,11 +1975,13 @@ void scanRfidTask(void * parameter) {
             Serial.print(tagSize);
             Serial.println(" bytes");
 
-            uint8_t numPages = readTagSize()/4;
+            uint16_t numPages = tagSize / 4;
 
-            for (uint8_t i = 4; i < 4+numPages; i++) {
+            for (uint16_t i = 4; i < 4+numPages; i++) {
 
-              if (!robustPageRead(i, data+(i-4) * 4))
+              if ((uint32_t)(i - 4) * 4 + 4 > tagSize) break; // Pufferschutz
+
+              if (!robustPageRead((uint8_t)i, data+(i-4) * 4))
               {
                 Serial.printf("Failed to read page %d after retries, stopping\n", i);
                 break; // Stop if reading fails after retries
@@ -2216,7 +2002,7 @@ void scanRfidTask(void * parameter) {
 
             Serial.println("Tag reading completed, starting NDEF decode...");
 
-            if (!decodeNdefAndReturnJson(data, uidString))
+            if (!decodeNdefAndReturnJson(data, tagSize, uidString))
             {
               oledShowProgressBar(1, 1, tr(STR_FAILURE), tr(STR_UNKNOWN_TAG));
               oledSetPriority(DISPLAY_PRIORITY_WARNING, 2000);
@@ -2228,6 +2014,7 @@ void scanRfidTask(void * parameter) {
             }
 
             free(data);
+            }
           }
           else
           {
@@ -2250,14 +2037,15 @@ void scanRfidTask(void * parameter) {
           activeTagUuid = uidString;
 
           bool handledAsNdef = false;
-          uint16_t tagSize = readTagSize();
-          if (tagSize > 0)
+          uint16_t tagSize = getReadableTagSize();
+          uint8_t* data = (tagSize > 0) ? (uint8_t*)malloc(tagSize) : NULL;
+          if (data != NULL)
           {
-            uint8_t* data = (uint8_t*)malloc(tagSize);
             memset(data, 0, tagSize);
-            uint8_t numPages = tagSize / 4;
-            for (uint8_t i = 4; i < 4 + numPages; i++) {
-              if (!robustPageRead(i, data + (i - 4) * 4)) {
+            uint16_t numPages = tagSize / 4;
+            for (uint16_t i = 4; i < 4 + numPages; i++) {
+              if ((uint32_t)(i - 4) * 4 + 4 > tagSize) break; // Pufferschutz
+              if (!robustPageRead((uint8_t)i, data + (i - 4) * 4)) {
                 Serial.printf("Page %d read failed, stopping\n", i);
                 break;
               }
@@ -2269,7 +2057,7 @@ void scanRfidTask(void * parameter) {
               esp_task_wdt_reset();
               vTaskDelay(pdMS_TO_TICKS(2));
             }
-            if (decodeNdefAndReturnJson(data, uidString)) {
+            if (decodeNdefAndReturnJson(data, tagSize, uidString)) {
               handledAsNdef = true;
               nfcReaderState = NFC_READ_SUCCESS;
             }
@@ -2345,7 +2133,6 @@ void scanRfidTask(void * parameter) {
 }
 
 void startNfc() {
-  nfcRequestMutex = xSemaphoreCreateMutex();
   oledShowProgressBar(4, NUM_SETUP_STEPS, DISPLAY_BOOT_TEXT, tr(STR_NFC_INIT));
   pulsePn532Reset();
   nfc.begin();                                           // Beginne Kommunikation mit RFID Leser
@@ -2372,7 +2159,7 @@ void startNfc() {
     BaseType_t result = xTaskCreatePinnedToCore(
       scanRfidTask, /* Function to implement the task */
       "RfidReader", /* Name of the task */
-      5115,  /* Stack size in words */
+      6144,  /* Stack size in bytes */
       NULL,  /* Task input parameter */
       rfidTaskPrio,  /* Priority of the task */
       &RfidReaderTask,  /* Task handle. */

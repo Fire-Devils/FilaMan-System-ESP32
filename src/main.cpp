@@ -16,7 +16,6 @@
 #include "lang.h"
 
 bool mainTaskWasPaused = 0;
-uint8_t scaleTareCounter = 0;
 bool touchSensorConnected = false;
 bool booting = true;
 
@@ -179,17 +178,35 @@ void loop() {
     }
   }
 
-  if (scaleConnected && scaleCalibrated)
+  // HX711 liefert keine gueltigen Messwerte: Fehler statt Gewicht anzeigen
+  static bool lastScaleError = false;
+  static unsigned long lastScaleErrorShow = 0;
+  bool scaleErrorNow = scaleConnected && scaleError;
+  if (scaleErrorNow) {
+    weightCounterToApi = 0;
+    weightSend = 0;
+    if (pauseMainTask == 0 && intervalElapsed(currentMillis, lastScaleErrorShow, 2000)) {
+      oledDisplayText(tr(STR_HX711_NOT_FOUND));
+    }
+  } else if (lastScaleError) {
+    mainTaskWasPaused = true; // normale Anzeige erzwingen
+  }
+  lastScaleError = scaleErrorNow;
+
+  if (scaleConnected && scaleCalibrated && !scaleErrorNow)
   {
     // Ausgabe der Waage auf Display
     // Block weight display during NFC write operations and higher-priority display messages
     if(pauseMainTask == 0 && !nfcWriteInProgress && oledCanUpdate(DISPLAY_PRIORITY_STATUS))
     {
-      // Use filtered weight for smooth display, but still check API weight for significant changes
+      // Use filtered weight for smooth display
       int16_t displayWeight = getFilteredDisplayWeight();
-      if (mainTaskWasPaused || (weight != lastWeight && (nfcReaderState == NFC_IDLE || tagProcessed)))
+      int16_t shownWeight = (abs(displayWeight) < 2) ? 0 : displayWeight;
+      static int16_t lastShownWeight = INT16_MIN;
+      if (mainTaskWasPaused || (shownWeight != lastShownWeight && (nfcReaderState == NFC_IDLE || tagProcessed)))
       {
-        oledShowWeight((abs(displayWeight) < 2) ? 0 : displayWeight);
+        oledShowWeight(shownWeight);
+        lastShownWeight = shownWeight;
         oledSetPriority(DISPLAY_PRIORITY_STATUS, 0);  // Weight can always be overwritten
       }
       mainTaskWasPaused = false;
@@ -281,4 +298,5 @@ void loop() {
     }
   }
   esp_task_wdt_reset();
+  vTaskDelay(pdMS_TO_TICKS(5)); // loop lief sonst mit 100 % CPU
 }

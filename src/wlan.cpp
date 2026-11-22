@@ -149,7 +149,7 @@ void initWiFi() {
   });
 
   if(wm_nonblocking) wm.setConfigPortalBlocking(false);
-  //wm.setConfigPortalTimeout(320); // Portal nach 5min schließen
+  wm.setConfigPortalTimeout(180); // Nach 3 Minuten ohne WLAN-Setup weiterbooten, damit die Waage offline nutzbar bleibt.
   // WiFiManager-Reconnect deaktiviert: der ESP32-Stack übernimmt das via
   // setAutoReconnect(true). Zwei parallele Reconnect-Mechanismen erzeugen
   // sonst einen Verbindungssturm, der den Router zu AUTH_EXPIRE-Kicks verleitet.

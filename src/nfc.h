@@ -38,7 +38,9 @@ extern String lastSpoolId;
 extern volatile nfcReaderStateType nfcReaderState;
 extern volatile bool nfcWriteInProgress;
 extern volatile bool scanRequestActive;
-extern bool tagProcessed;
-extern bool isBambuTag;
+extern volatile bool tagProcessed;
+extern volatile bool isBambuTag;
+extern volatile bool nfcReadingTaskSuspendRequest; // Reader-Task per Flag anhalten (statt vTaskSuspend)
+extern volatile bool nfcReadingTaskSuspendState;   // true = Reader-Task pausiert
 
 #endif

@@ -18,26 +18,36 @@ int16_t weight = 0;
 // Weight stabilization variables
 #define MOVING_AVERAGE_SIZE 8           // Reduced from 20 to 8 for faster response
 #define LOW_PASS_ALPHA 0.3f            // Increased from 0.15 to 0.3 for faster tracking
-#define DISPLAY_THRESHOLD 0.3f         // Reduced from 0.5 to 0.3g for more responsive display
-#define API_THRESHOLD 1.5f             // Reduced from 2.0 to 1.5g for faster API actions
+#define DISPLAY_HYSTERESIS 0.6f        // Float-Hysterese gegen Flackern an .5-g-Grenzen
 #define MEASUREMENT_INTERVAL_MS 30     // Reduced from 50ms to 30ms for faster updates
+#define HX711_MAX_RAW 8388607L         // 0x7FFFFF (gesaettigt)
+#define HX711_MIN_RAW (-8388608L)      // -0x800000 (gesaettigt)
+#define SCALE_STALL_MS 2000            // ohne gueltigen Messwert -> Recovery
+#define SCALE_RECOVERY_INTERVAL_MS 5000
+#define SCALE_SETTLE_SAMPLES 4         // Messwerte nach Recovery verwerfen
 
 float weightBuffer[MOVING_AVERAGE_SIZE];
 uint8_t bufferIndex = 0;
 bool bufferFilled = false;
 float filteredWeight = 0.0f;
 int16_t lastDisplayedWeight = 0;
-int16_t lastStableWeight = 0;        // For API/action triggering
 unsigned long lastMeasurementTime = 0;
+
+// Ringpuffer fuer Median-aus-3 (Ausreisserfilter, Gramm)
+static float medianBuf[3];
+static uint8_t medianCount = 0;
+static uint8_t medianIndex = 0;
 
 uint8_t weightCounterToApi = 0;
 uint8_t scale_tare_counter = 0;
-bool scaleTareRequest = false;
-uint8_t pauseMainTask = 0;
-bool scaleCalibrated;
-bool scaleConnected;
-bool autoTare = true;
-bool scaleCalibrationActive = false;
+volatile bool scaleTareRequest = false;
+volatile uint8_t pauseMainTask = 0;
+volatile bool scaleCalibrated;
+volatile bool scaleConnected;
+volatile bool autoTare = true;
+volatile bool scaleCalibrationActive = false;
+volatile bool scaleError = false;
+volatile bool scalePauseRequest = false;  // z. B. waehrend OTA: Scale-Loop misst und zeichnet nicht
 volatile bool scaleCalibrationRequest = false;
 
 /**
@@ -51,6 +61,62 @@ void friendlyWait(uint16_t ticks) {
   }
 }
 
+// ##### HX711 Lesefunktionen mit Timeout #####
+
+/**
+ * Einzelnen Rohwert lesen. false bei Timeout oder gesaettigtem Wert.
+ */
+static bool readRawSample(long &out, uint32_t timeoutMs) {
+  if (!scale.wait_ready_timeout(timeoutMs, 1)) return false;
+  long v = scale.read();
+  if (v >= HX711_MAX_RAW || v <= HX711_MIN_RAW) return false;
+  out = v;
+  return true;
+}
+
+/**
+ * Median aus bis zu `samples` (max. 15) gueltigen Rohwerten.
+ * false, wenn weniger als die Haelfte gueltig war.
+ */
+static bool readRawMedian(long &out, uint8_t samples, uint32_t timeoutPerSampleMs) {
+  if (samples > 15) samples = 15;
+  if (samples == 0) return false;
+  long vals[15];
+  uint8_t n = 0;
+  for (uint8_t i = 0; i < samples; i++) {
+    long v;
+    if (readRawSample(v, timeoutPerSampleMs)) vals[n++] = v;
+    esp_task_wdt_reset();
+  }
+  if (n == 0 || n < (samples + 1) / 2) return false;
+
+  // Insertion Sort
+  for (uint8_t i = 1; i < n; i++) {
+    long k = vals[i];
+    int8_t j = i - 1;
+    while (j >= 0 && vals[j] > k) {
+      vals[j + 1] = vals[j];
+      j--;
+    }
+    vals[j + 1] = k;
+  }
+  out = vals[n / 2];
+  return true;
+}
+
+/**
+ * Tare ueber Median; bei Fehlschlag bleibt der Offset unveraendert.
+ */
+static bool tareWithMedian() {
+  long v;
+  if (!readRawMedian(v, 15, 500)) {
+    Serial.println("Tare failed: no valid HX711 readings");
+    return false;
+  }
+  scale.set_offset(v);
+  return true;
+}
+
 // ##### Weight stabilization functions #####
 
 /**
@@ -61,11 +127,15 @@ void resetWeightFilter() {
   bufferFilled = false;
   filteredWeight = 0.0f;
   lastDisplayedWeight = 0;
-  lastStableWeight = 0;            // Reset stable weight for API actions
+  medianCount = 0;
+  medianIndex = 0;
 
   // Initialize buffer with zeros
   for (int i = 0; i < MOVING_AVERAGE_SIZE; i++) {
     weightBuffer[i] = 0.0f;
+  }
+  for (int i = 0; i < 3; i++) {
+    medianBuf[i] = 0.0f;
   }
 }
 
@@ -94,11 +164,24 @@ float applyLowPassFilter(float newValue) {
 
 /**
  * Process new weight reading with stabilization
- * Returns stabilized weight value
+ * Returns stabilized (rounded) weight value
  */
 int16_t processWeightReading(float rawWeight) {
+  // Median aus den letzten drei Rohgewichten (Ausreisserfilter)
+  medianBuf[medianIndex] = rawWeight;
+  medianIndex = (medianIndex + 1) % 3;
+  if (medianCount < 3) medianCount++;
+
+  float w = rawWeight;
+  if (medianCount == 3) {
+    float a = medianBuf[0], b = medianBuf[1], c = medianBuf[2];
+    if ((a <= b && b <= c) || (c <= b && b <= a)) w = b;
+    else if ((b <= a && a <= c) || (c <= a && a <= b)) w = a;
+    else w = c;
+  }
+
   // Add to moving average buffer
-  weightBuffer[bufferIndex] = rawWeight;
+  weightBuffer[bufferIndex] = w;
   bufferIndex = (bufferIndex + 1) % MOVING_AVERAGE_SIZE;
 
   if (bufferIndex == 0) {
@@ -111,28 +194,16 @@ int16_t processWeightReading(float rawWeight) {
   // Apply low-pass filter
   float smoothedWeight = applyLowPassFilter(avgWeight);
 
-  // Round to nearest gram
-  int16_t newWeight = round(smoothedWeight);
-
-  // Update displayed weight if display threshold is reached
-  if (abs(newWeight - lastDisplayedWeight) >= DISPLAY_THRESHOLD) {
-    lastDisplayedWeight = newWeight;
+  // Gerundeter Wert, aber nur mit Hysterese aendern
+  if (fabsf(smoothedWeight - (float)lastDisplayedWeight) >= DISPLAY_HYSTERESIS) {
+    lastDisplayedWeight = (int16_t)lroundf(smoothedWeight);
   }
 
-  // Update global weight for API actions only if stable threshold is reached
-  int16_t weightToReturn = weight; // Default: keep current weight
-
-  if (abs(newWeight - lastStableWeight) >= API_THRESHOLD) {
-    lastStableWeight = newWeight;
-    weightToReturn = newWeight;
-  }
-
-  return weightToReturn;
+  return lastDisplayedWeight;
 }
 
 /**
  * Get current filtered weight for display purposes
- * This returns the smoothed weight even if it hasn't triggered API actions
  */
 int16_t getFilteredDisplayWeight() {
   return lastDisplayedWeight;
@@ -155,7 +226,7 @@ uint8_t setAutoTare(bool autoTareValue) {
 
 uint8_t tareScale() {
   Serial.println("Tare scale");
-  scale.tare();
+  tareWithMedian();
   resetWeightFilter();
 
   return 1;
@@ -166,12 +237,22 @@ void scale_loop(void * parameter) {
   Serial.println("Scale Loop started");
   Serial.println("++++++++++++++++++++++++++++++");
 
-  //scaleTareRequest == true;
   // Initialize weight filter
   resetWeightFilter();
   lastMeasurementTime = millis();
 
+  unsigned long lastValidSampleTime = millis();
+  unsigned long lastRecoveryTime = 0;
+  uint8_t settleDiscard = 0;
+
   for(;;) {
+    // Kooperative Pause (statt vTaskSuspend: der Task koennte den Display-Mutex halten)
+    if (scalePauseRequest) {
+      lastValidSampleTime = millis();
+      vTaskDelay(pdMS_TO_TICKS(100));
+      continue;
+    }
+
     unsigned long currentTime = millis();
 
     // Only measure at defined intervals to reduce noise
@@ -184,53 +265,73 @@ void scale_loop(void * parameter) {
           Serial.println("Re-Tare scale");
           oledDisplayText(tr(STR_TARE_SCALE));
           vTaskDelay(pdMS_TO_TICKS(1000));
-          scale.tare();
+          tareWithMedian();
           resetWeightFilter(); // Reset filter after manual tare
           vTaskDelay(pdMS_TO_TICKS(1000));
           oledShowWeight(0);
           scaleTareRequest = false;
           scale_tare_counter = 0;
           weight = 0; // Reset global weight variable after tare
+          lastValidSampleTime = millis();
         }
 
         // Check for calibration request
         if (scaleCalibrationRequest) {
             scaleCalibrationRequest = false;
             calibrate_scale();
+            lastValidSampleTime = millis();
         }
 
-        // Get raw weight reading
-        float rawWeight = scale.get_units();
+        // Rohwert lesen (mit Timeout, gesaettigte Werte werden verworfen)
+        long raw;
+        if (readRawSample(raw, 100)) {
+          lastValidSampleTime = millis();
+          scaleError = false;
 
-        // Process weight with stabilization
-        int16_t stabilizedWeight = processWeightReading(rawWeight);
+          if (settleDiscard > 0) {
+            // Einschwingzeit nach Recovery
+            settleDiscard--;
+          } else {
+            float rawWeight = (float)(raw - scale.get_offset()) / scale.get_scale();
 
-        // Update global weight variable only if it changed significantly (for API actions)
-        if (stabilizedWeight != weight) {
-          weight = stabilizedWeight;
-          oledResetActivityTimer(); // Wake display on weight change
-        }
+            // Process weight with stabilization
+            int16_t stabilizedWeight = processWeightReading(rawWeight);
 
-        // Prüfen ob die Waage korrekt genullt ist (gefilterter Wert, damit
-        // einzelne Rauschausreißer keinen Re-Tare auslösen)
-        // Abweichung von 2g ignorieren
-        int16_t filteredForTare = getFilteredDisplayWeight();
-        if (autoTare && ((filteredForTare > 2 && filteredForTare < 7) || filteredForTare < -2))
-        {
-          scale_tare_counter++;
-        }
-        else
-        {
-          scale_tare_counter = 0;
-        }
+            if (stabilizedWeight != weight) {
+              weight = stabilizedWeight;
+              oledResetActivityTimer(); // Wake display on weight change
+            }
 
-        // Debug output for monitoring (can be removed in production)
-        static unsigned long lastDebugTime = 0;
-        if (currentTime - lastDebugTime > 2000) { // Print every 2 seconds
-          lastDebugTime = currentTime;
+            // Prüfen ob die Waage korrekt genullt ist (gefilterter Wert, damit
+            // einzelne Rauschausreißer keinen Re-Tare auslösen).
+            // Totzone |w| < 2 (wie Anzeige in main.cpp) wird ignoriert.
+            int16_t filteredForTare = getFilteredDisplayWeight();
+            if (autoTare && ((filteredForTare >= 2 && filteredForTare < 7) || filteredForTare <= -2))
+            {
+              scale_tare_counter++;
+            }
+            else
+            {
+              scale_tare_counter = 0;
+            }
+          }
         }
 
         lastMeasurementTime = currentTime;
+      }
+    }
+
+    // Laufzeitueberwachung: lange kein gueltiger Messwert -> HX711 neu starten
+    unsigned long now = millis();
+    if (now - lastValidSampleTime > SCALE_STALL_MS) {
+      scaleError = true;
+      if (now - lastRecoveryTime >= SCALE_RECOVERY_INTERVAL_MS) {
+        lastRecoveryTime = now;
+        Serial.println("HX711: no valid reading, power cycle");
+        scale.power_down();
+        vTaskDelay(pdMS_TO_TICKS(10));
+        scale.power_up();
+        settleDiscard = SCALE_SETTLE_SAMPLES;
       }
     }
 
@@ -343,7 +444,13 @@ void start_scale(bool touchSensorConnected) {
   preferences.begin(NVS_NAMESPACE_SCALE, true); // true = readonly
   if(preferences.isKey(NVS_KEY_CALIBRATION)){
     calibrationValue = preferences.getFloat(NVS_KEY_CALIBRATION);
-    scaleCalibrated = true;
+    if (calibrationValue == 0.0f || !isfinite(calibrationValue)) {
+      // ungueltiger Wert -> wie nicht kalibriert behandeln
+      calibrationValue = SCALE_DEFAULT_CALIBRATION_VALUE;
+      scaleCalibrated = false;
+    } else {
+      scaleCalibrated = true;
+    }
   }else{
     calibrationValue = SCALE_DEFAULT_CALIBRATION_VALUE;
     scaleCalibrated = false;
@@ -380,7 +487,7 @@ void start_scale(bool touchSensorConnected) {
     BaseType_t result = xTaskCreatePinnedToCore(
       scale_loop, /* Function to implement the task */
       "ScaleLoop", /* Name of the task */
-      2048,  /* Stack size in words */
+      4096,  /* Stack size in words */
       NULL,  /* Task input parameter */
       scaleTaskPrio,  /* Priority of the task */
       &ScaleTask,  /* Task handle. */
@@ -404,47 +511,48 @@ void start_scale(bool touchSensorConnected) {
 
 uint8_t calibrate_scale() {
   uint8_t returnState = 0;
-  float newCalibrationValue;
 
   scaleCalibrationActive = true;
 
-  if (RfidReaderTask != NULL) vTaskSuspend(RfidReaderTask);
-  // Do not suspend ScaleTask if we are running inside it
-  if (ScaleTask != NULL && xTaskGetCurrentTaskHandle() != ScaleTask) vTaskSuspend(ScaleTask);
+  // NFC-Task kooperativ pausieren (kein vTaskSuspend: er koennte den I2C-Lock halten)
+  nfcReadingTaskSuspendRequest = true;
+  for (uint16_t i = 0; i < 300 && !nfcReadingTaskSuspendState; i++) {
+    vTaskDelay(pdMS_TO_TICKS(10));
+    esp_task_wdt_reset();
+  }
 
   pauseMainTask = 1;
 
-  if (scale.wait_ready_timeout(1000))
+  long rawZero = 0;
+  long rawLoad = 0;
+  bool ok = scale.wait_ready_timeout(1000);
+
+  if (ok)
   {
-
-    scale.set_scale();
     oledShowProgressBar(0, 3, tr(STR_SCALE_CAL), tr(STR_EMPTY_SCALE));
+    friendlyWait(5000);
 
-    for (uint16_t i = 0; i < 5000; i++) {
-      yield();
-      vTaskDelay(pdMS_TO_TICKS(1));
-      esp_task_wdt_reset();
+    ok = readRawMedian(rawZero, 15, 500);
+    if (ok) {
+      Serial.println("Zero reading done...");
+      Serial.print("Place a known weight on the scale...");
+
+      oledShowProgressBar(1, 3, tr(STR_SCALE_CAL), tr(STR_PLACE_WEIGHT));
+      friendlyWait(5000);
+
+      ok = readRawMedian(rawLoad, 15, 500);
     }
+  }
 
-    scale.tare();
-    Serial.println("Tare done...");
-    Serial.print("Place a known weight on the scale...");
+  if (ok)
+  {
+    long diff = rawLoad - rawZero;
+    float newCalibrationValue = (float)diff / (float)SCALE_LEVEL_WEIGHT;
+    Serial.print("Result (raw diff): ");
+    Serial.println(diff);
 
-    oledShowProgressBar(1, 3, tr(STR_SCALE_CAL), tr(STR_PLACE_WEIGHT));
-
-    for (uint16_t i = 0; i < 5000; i++) {
-      yield();
-      vTaskDelay(pdMS_TO_TICKS(1));
-      esp_task_wdt_reset();
-    }
-
-    float newCalibrationValue = scale.get_units(10);
-    Serial.print("Result: ");
-    Serial.println(newCalibrationValue);
-
-    newCalibrationValue = newCalibrationValue/SCALE_LEVEL_WEIGHT;
-
-    if (newCalibrationValue > 0)
+    // Negative Faktoren sind erlaubt (vertauschte Zellen-Adern)
+    if (labs(diff) >= 5000 && isfinite(newCalibrationValue) && fabsf(newCalibrationValue) >= 1.0f)
     {
       Serial.print("New calibration value has been set to: ");
       Serial.println(newCalibrationValue);
@@ -466,24 +574,16 @@ uint8_t calibrate_scale() {
       oledShowProgressBar(2, 3, tr(STR_SCALE_CAL), tr(STR_REMOVE_WEIGHT));
 
       scale.set_scale(newCalibrationValue);
+      scale.set_offset(rawZero);
       resetWeightFilter(); // Reset filter after calibration
-      for (uint16_t i = 0; i < 2000; i++) {
-        yield();
-        vTaskDelay(pdMS_TO_TICKS(1));
-        esp_task_wdt_reset();
-      }
+      friendlyWait(2000);
 
       oledShowProgressBar(3, 3, tr(STR_SCALE_CAL), tr(STR_COMPLETED));
 
-      // For some reason it is not possible to re-tare the scale here, it will result in a wdt timeout. Instead let the scale loop do the taring
-      //scale.tare();
+      // Gewicht ist jetzt entfernt: Scale-Loop nullt neu
       scaleTareRequest = true;
 
-      for (uint16_t i = 0; i < 2000; i++) {
-        yield();
-        vTaskDelay(pdMS_TO_TICKS(1));
-        esp_task_wdt_reset();
-      }
+      friendlyWait(2000);
 
       scaleCalibrated = true;
       returnState = 1;
@@ -493,12 +593,7 @@ uint8_t calibrate_scale() {
       Serial.println("Calibration value is invalid. Please recalibrate.");
 
       oledShowProgressBar(3, 3, tr(STR_FAILURE), tr(STR_CALIBRATION_ERROR));
-
-      for (uint16_t i = 0; i < 50000; i++) {
-        yield();
-        vTaskDelay(pdMS_TO_TICKS(1));
-        esp_task_wdt_reset();
-      }
+      friendlyWait(5000);
       returnState = 0;
     }
   }
@@ -507,17 +602,11 @@ uint8_t calibrate_scale() {
     Serial.println("HX711 not found.");
 
     oledDisplayText(tr(STR_HX711_NOT_FOUND));
-
-    for (uint16_t i = 0; i < 30000; i++) {
-      yield();
-      vTaskDelay(pdMS_TO_TICKS(1));
-      esp_task_wdt_reset();
-    }
+    friendlyWait(5000);
     returnState = 0;
   }
 
-  if (RfidReaderTask != NULL) vTaskResume(RfidReaderTask);
-  if (ScaleTask != NULL && xTaskGetCurrentTaskHandle() != ScaleTask) vTaskResume(ScaleTask);
+  nfcReadingTaskSuspendRequest = false;
   pauseMainTask = 0;
   scaleCalibrationActive = false;
 

@@ -17,11 +17,32 @@ static DisplayPriority currentPriority = DISPLAY_PRIORITY_NONE;
 static unsigned long prioritySetTime = 0;
 static unsigned long priorityMinDuration = 0;
 
+// Display-Verfuegbarkeit: false, wenn display.begin() fehlschlaegt (Geraet laeuft dann ohne OLED)
+static bool displayAvailable = false;
+
+// Rekursiver Mutex: das OLED/der Framebuffer wird aus mehreren Tasks benutzt,
+// die oled*-Funktionen rufen sich gegenseitig auf.
+static SemaphoreHandle_t displayMutex = NULL;
+
+struct DisplayLock {
+    bool locked;
+    DisplayLock() : locked(false) {
+        if (displayMutex) locked = (xSemaphoreTakeRecursive(displayMutex, portMAX_DELAY) == pdTRUE);
+    }
+    ~DisplayLock() {
+        if (locked) xSemaphoreGiveRecursive(displayMutex);
+    }
+    DisplayLock(const DisplayLock&) = delete;
+    DisplayLock& operator=(const DisplayLock&) = delete;
+};
+
 // Display sleep management
 static bool oledAsleep = false;
 static unsigned long lastActivityMillis = 0;
 
 void oledWake() {
+    if (!displayAvailable) return;
+    DisplayLock lock;
     if (oledAsleep) {
         display.ssd1306_command(SSD1306_DISPLAYON);
         oledAsleep = false;
@@ -30,6 +51,8 @@ void oledWake() {
 }
 
 void oledSleep() {
+    if (!displayAvailable) return;
+    DisplayLock lock;
     if (!oledAsleep) {
         display.ssd1306_command(SSD1306_DISPLAYOFF);
         oledAsleep = true;
@@ -37,6 +60,8 @@ void oledSleep() {
 }
 
 void oledResetActivityTimer() {
+    if (!displayAvailable) return;
+    DisplayLock lock;
     lastActivityMillis = millis();
     if (oledAsleep) {
         oledWake();
@@ -44,6 +69,8 @@ void oledResetActivityTimer() {
 }
 
 void oledCheckSleep() {
+    if (!displayAvailable) return;
+    DisplayLock lock;
     if (oledSleepTimeout == 0 || oledAsleep) return;
     if (millis() - lastActivityMillis >= (unsigned long)oledSleepTimeout * 1000UL) {
         oledSleep();
@@ -103,10 +130,14 @@ DisplayPriority oledGetCurrentPriority() {
     return currentPriority;
 }
 void setupDisplay() {
+    if (!displayMutex) displayMutex = xSemaphoreCreateRecursiveMutex();
+    DisplayLock lock;
     if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-        Serial.println(F("SSD1306 allocation failed"));
-        for (;;); // Stoppe das Programm, wenn das Display nicht initialisiert werden kann
+        Serial.println(F("SSD1306 allocation failed - continuing without display"));
+        displayAvailable = false;
+        return;
     }
+    displayAvailable = true;
     display.setTextColor(WHITE);
     display.clearDisplay();
 
@@ -119,14 +150,20 @@ void setupDisplay() {
 }
 
 void oledclearline() {
+    if (!displayAvailable) return;
+    DisplayLock lock;
     display.fillRect(0, 0, SCREEN_WIDTH, 16, BLACK);
 }
 
 void oledcleardata() {
+    if (!displayAvailable) return;
+    DisplayLock lock;
     display.fillRect(0, OLED_DATA_START, SCREEN_WIDTH, OLED_DATA_END - OLED_DATA_START, BLACK);
 }
 
 int oled_center_h(const String &text) {
+    if (!displayAvailable) return 0;
+    DisplayLock lock;
     int16_t x1, y1;
     uint16_t w, h;
     display.getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
@@ -134,6 +171,8 @@ int oled_center_h(const String &text) {
 }
 
 int oled_center_v(const String &text) {
+    if (!displayAvailable) return OLED_DATA_START;
+    DisplayLock lock;
     int16_t x1, y1;
     uint16_t w, h;
     display.getTextBounds(text, 0, OLED_DATA_START, &x1, &y1, &w, &h);
@@ -143,6 +182,8 @@ int oled_center_v(const String &text) {
 
 std::vector<String> splitTextIntoLines(const String &text, uint8_t textSize) {
     std::vector<String> lines;
+    if (!displayAvailable) return lines;
+    DisplayLock lock;
     display.setTextSize(textSize);
 
     // Text in Wörter aufteilen
@@ -202,6 +243,8 @@ std::vector<String> splitTextIntoLines(const String &text, uint8_t textSize) {
 }
 
 void oledShowMultilineMessage(const String &message, uint8_t size) {
+    if (!displayAvailable) return;
+    DisplayLock lock;
     std::vector<String> lines;
     int maxLines = 3;  // Maximale Anzahl Zeilen für size 2
 
@@ -230,6 +273,8 @@ void oledShowMultilineMessage(const String &message, uint8_t size) {
 }
 
 void oledDisplayText(const String &message, uint8_t size) {
+    if (!displayAvailable) return;
+    DisplayLock lock;
     oledcleardata();
     display.setTextSize(size);
     display.setTextWrap(false);
@@ -255,6 +300,9 @@ void oledShowTopRow() {
     const u_int8_t symbol_width =16;
     const u_int8_t symbol_height =16;
     u_int8_t x_pos = rightmost_x;
+
+    if (!displayAvailable) return;
+    DisplayLock lock;
 
     oledclearline();
 
@@ -308,6 +356,8 @@ void oledShowTopRow() {
 }
 
 void oledShowIcon(const char* icon) {
+    if (!displayAvailable) return;
+    DisplayLock lock;
     oledcleardata();
 
     uint16_t iconSize = OLED_DATA_END-OLED_DATA_START;
@@ -330,7 +380,10 @@ void oledShowIcon(const char* icon) {
 }
 
 void oledShowProgressBar(const uint8_t step, const uint8_t numSteps, const char* largeText, const char* statusMessage) {
-    assert(step <= numSteps);
+    if (!displayAvailable) return;
+    DisplayLock lock;
+    uint8_t safeStep = step;
+    if (safeStep > numSteps) safeStep = numSteps;
 
     // clear data and bar area
     display.fillRect(0, OLED_DATA_START, SCREEN_WIDTH, SCREEN_HEIGHT-16, BLACK);
@@ -344,13 +397,15 @@ void oledShowProgressBar(const uint8_t step, const uint8_t numSteps, const char*
     display.setCursor(0, OLED_DATA_END-SCREEN_PROGRESS_BAR_HEIGHT-10);
     display.print(statusMessage);
 
-    const int barLength = ((SCREEN_WIDTH-2)*step)/numSteps;
+    const int barLength = (numSteps == 0) ? 0 : ((SCREEN_WIDTH-2)*safeStep)/numSteps;
     display.drawRoundRect(0, SCREEN_HEIGHT-SCREEN_PROGRESS_BAR_HEIGHT, SCREEN_WIDTH, 12, 6, WHITE);
     display.fillRoundRect(1, SCREEN_HEIGHT-SCREEN_PROGRESS_BAR_HEIGHT+1, barLength, 10, 6, WHITE);
     display.display();
 }
 
 void oledShowWeight(int16_t weight) {
+    if (!displayAvailable) return;
+    DisplayLock lock;
     // Display Gewicht
     oledcleardata();
     display.setTextSize(3);
@@ -361,6 +416,8 @@ void oledShowWeight(int16_t weight) {
 }
 
 void oledShowRemainingWeight(uint16_t remainingWeight) {
+    if (!displayAvailable) return;
+    DisplayLock lock;
     oledcleardata();
     display.setTextSize(1);
     display.setCursor(oled_center_h(tr(STR_WEIGHT_SENT_REST)), OLED_DATA_START + 4);
@@ -374,6 +431,8 @@ void oledShowRemainingWeight(uint16_t remainingWeight) {
 }
 
 void oledShowConnectionError(const char* error, const String& ip) {
+    if (!displayAvailable) return;
+    DisplayLock lock;
     oledcleardata();
     display.setTextSize(1);
 

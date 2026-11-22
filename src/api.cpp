@@ -25,11 +25,34 @@ struct ApiRequest {
     String str3; // error message
     float remainingWeight; // remaining weight from rfid-result
     bool active = false;
+    uint32_t seq = 0; // fortlaufende Nummer fuer FIFO-Reihenfolge
 };
 
 #define MAX_API_QUEUE 10
 ApiRequest apiQueue[MAX_API_QUEUE];
 SemaphoreHandle_t queueMutex;
+static uint32_t apiQueueSeq = 0;
+
+// Reiht einen Request ein (setzt ALLE Felder). false, wenn Queue voll oder Mutex nicht verfuegbar.
+static bool enqueueRequest(const ApiRequest& r) {
+    bool queued = false;
+    if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        for (int i = 0; i < MAX_API_QUEUE; i++) {
+            if (!apiQueue[i].active) {
+                apiQueue[i] = r;
+                apiQueue[i].seq = ++apiQueueSeq;
+                apiQueue[i].active = true;
+                queued = true;
+                break;
+            }
+        }
+        xSemaphoreGive(queueMutex);
+    }
+    if (!queued) {
+        Serial.printf("API queue full, request dropped: type=%d\n", (int)r.type);
+    }
+    return queued;
+}
 
 void saveFilamanConfig() {
     Preferences preferences;
@@ -81,11 +104,10 @@ bool sendHeartbeat() {
     if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
     HTTPClient http;
     http.setTimeout(10000);  // 10s statt 3s - wichtig für instabile Verbindungen
-    http.setReuse(true);     // Keep-Alive aktivieren für bessere Performance
+    http.setReuse(false);
     http.begin(filamanUrl + "/api/v1/devices/heartbeat");
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", "Device " + filamanToken);
-    http.addHeader("Connection", "keep-alive");  // Explizit Keep-Alive anfordern
     JsonDocument doc;
     doc["ip_address"] = WiFi.localIP().toString();
     String payload;
@@ -119,11 +141,10 @@ bool sendWeight(int spoolId, String tagUuid, float measuredWeight) {
     }
     HTTPClient http;
     http.setTimeout(10000);  // 10s Timeout
-    http.setReuse(true);
+    http.setReuse(false);
     http.begin(filamanUrl + "/api/v1/devices/scale/weight");
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", "Device " + filamanToken);
-    http.addHeader("Connection", "keep-alive");
     JsonDocument doc;
     // Only add spool_id if it's > 0 (for NTAG tags with spool ID)
     // For Bambu tags (spoolId == 0), only send tag_uuid
@@ -166,11 +187,10 @@ bool sendLocation(int spoolId, String spoolTagUuid, int locationId, String locat
     if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
     HTTPClient http;
     http.setTimeout(10000);  // 10s Timeout
-    http.setReuse(true);
+    http.setReuse(false);
     http.begin(filamanUrl + "/api/v1/devices/scale/locate");
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", "Device " + filamanToken);
-    http.addHeader("Connection", "keep-alive");
     JsonDocument doc;
     if (spoolId > 0) doc["spool_id"] = spoolId;
     if (spoolTagUuid.length() > 0) doc["spool_tag_uuid"] = spoolTagUuid;
@@ -187,11 +207,10 @@ bool sendRfidResult(String tagUuid, int spoolId, int locationId, bool success, S
     if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
     HTTPClient http;
     http.setTimeout(10000);  // 10s Timeout
-    http.setReuse(true);
+    http.setReuse(false);
     http.begin(filamanUrl + "/api/v1/devices/rfid-result");
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", "Device " + filamanToken);
-    http.addHeader("Connection", "keep-alive");
 
     JsonDocument doc;
     doc["success"] = success;
@@ -212,11 +231,10 @@ bool sendTagData(String tagJson) {
     if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
     HTTPClient http;
     http.setTimeout(10000);
-    http.setReuse(true);
+    http.setReuse(false);
     http.begin(filamanUrl + "/api/v1/devices/tag-data");
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Authorization", "Device " + filamanToken);
-    http.addHeader("Connection", "keep-alive");
     JsonDocument doc;
     doc["tag_json"] = tagJson;
     String payload;
@@ -233,13 +251,20 @@ void filamanApiTask(void* pvParameters) {
         bool hasReq = false;
 
         if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            int best = -1;
             for(int i=0; i<MAX_API_QUEUE; i++) {
-                if(apiQueue[i].active) {
-                    req = apiQueue[i];
-                    apiQueue[i].active = false;
-                    hasReq = true;
-                    break;
+                if(apiQueue[i].active && (best < 0 || (int32_t)(apiQueue[i].seq - apiQueue[best].seq) < 0)) {
+                    best = i;
                 }
+            }
+            if (best >= 0) {
+                req = apiQueue[best];
+                apiQueue[best].active = false;
+                // Strings freigeben, damit grosse Tag-JSONs nicht dauerhaft Heap belegen
+                apiQueue[best].str1 = String();
+                apiQueue[best].str2 = String();
+                apiQueue[best].str3 = String();
+                hasReq = true;
             }
             xSemaphoreGive(queueMutex);
         }
@@ -250,7 +275,12 @@ void filamanApiTask(void* pvParameters) {
                 case API_REQUEST_REGISTER: {
                     // URL übernehmen und persistieren, dann blockierend
                     // registrieren - hier unkritisch, da eigener Task.
-                    if (req.str2.length() > 0) filamanUrl = req.str2;
+                    if (req.str2.length() > 0) {
+                        String u = req.str2;
+                        u.trim();
+                        while (u.endsWith("/")) u.remove(u.length() - 1);
+                        filamanUrl = u;
+                    }
                     saveFilamanConfig();
                     bool ok = registerDevice(req.str1);
                     Serial.printf("registerDevice: %s\n", ok ? "success" : "failed");
@@ -270,49 +300,40 @@ void filamanApiTask(void* pvParameters) {
     }
 }
 
+// Neuen, vollstaendig initialisierten Request anlegen.
+static ApiRequest makeRequest(FilamanApiRequestType type) {
+    ApiRequest r;
+    r.type = type;
+    r.id1 = 0;
+    r.id2 = 0;
+    r.val = 0.0f;
+    r.bool1 = false;
+    r.remainingWeight = 0.0f;
+    return r;
+}
+
 // Reiht die Registrierung ein, statt sie im AsyncTCP-Kontext auszuführen.
 // str2 = FilaMan-URL, str1 = Device-Code.
+// Ohne Queue-Platz kaeme nie ein "registerResult" - der Aufrufer muss
+// dem Frontend dann sofort einen Fehler zurueckgeben (Rueckgabe false).
 bool registerDeviceAsync(const String& url, const String& deviceCode) {
-    bool queued = false;
-    if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        for(int i=0; i<MAX_API_QUEUE; i++) if(!apiQueue[i].active) {
-            apiQueue[i].type = API_REQUEST_REGISTER;
-            apiQueue[i].id1 = 0;
-            apiQueue[i].id2 = 0;
-            apiQueue[i].str1 = deviceCode;
-            apiQueue[i].str2 = url;
-            apiQueue[i].val = 0.0f;
-            apiQueue[i].active = true;
-            queued = true;
-            break;
-        }
-        xSemaphoreGive(queueMutex);
-    }
-    // Ohne Queue-Platz kaeme nie ein "registerResult" - der Aufrufer muss
-    // dem Frontend dann sofort einen Fehler zurueckgeben.
-    return queued;
+    ApiRequest r = makeRequest(API_REQUEST_REGISTER);
+    r.str1 = deviceCode;
+    r.str2 = url;
+    return enqueueRequest(r);
 }
 
 void sendHeartbeatAsync() {
     if (!checkFilamanRegistration()) return;
+    // Prevent duplicate heartbeats
     if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        // Prevent duplicate heartbeats
         for(int i=0; i<MAX_API_QUEUE; i++) if(apiQueue[i].active && apiQueue[i].type == API_REQUEST_HEARTBEAT) {
             xSemaphoreGive(queueMutex);
             return;
         }
-        for(int i=0; i<MAX_API_QUEUE; i++) if(!apiQueue[i].active) {
-            apiQueue[i].type = API_REQUEST_HEARTBEAT;
-            apiQueue[i].id1 = 0;
-            apiQueue[i].id2 = 0;
-            apiQueue[i].str1 = "";
-            apiQueue[i].str2 = "";
-            apiQueue[i].val = 0.0f;
-            apiQueue[i].active = true;
-            break;
-        }
         xSemaphoreGive(queueMutex);
     }
+    enqueueRequest(makeRequest(API_REQUEST_HEARTBEAT));
 }
 
 void sendWeightAsync(int spoolId, String tagUuid, float weight) {
@@ -325,72 +346,40 @@ void sendWeightAsync(int spoolId, String tagUuid, float weight) {
         Serial.println("ERROR: Weight is 0 or negative, cannot send");
         return;
     }
-    if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        for(int i=0; i<MAX_API_QUEUE; i++) if(!apiQueue[i].active) {
-            apiQueue[i].type = API_REQUEST_WEIGHT;
-            apiQueue[i].id1 = spoolId;
-            apiQueue[i].id2 = 0;
-            apiQueue[i].str1 = tagUuid;
-            apiQueue[i].str2 = "";
-            apiQueue[i].val = weight;
-            apiQueue[i].active = true;
-            Serial.printf("Weight queued for API (slot %d)\n", i);
-            break;
-        }
-        xSemaphoreGive(queueMutex);
-    }
+    ApiRequest r = makeRequest(API_REQUEST_WEIGHT);
+    r.id1 = spoolId;
+    r.str1 = tagUuid;
+    r.val = weight;
+    if (enqueueRequest(r)) Serial.println("Weight queued for API");
 }
 
 void sendLocationAsync(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid) {
     if (!checkFilamanRegistration()) return;
-    if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        for(int i=0; i<MAX_API_QUEUE; i++) if(!apiQueue[i].active) {
-            apiQueue[i].type = API_REQUEST_LOCATE;
-            apiQueue[i].id1 = spoolId;
-            apiQueue[i].id2 = locationId;
-            apiQueue[i].str1 = spoolTagUuid;
-            apiQueue[i].str2 = locationTagUuid;
-            apiQueue[i].val = 0.0f;
-            apiQueue[i].active = true;
-            break;
-        }
-        xSemaphoreGive(queueMutex);
-    }
+    ApiRequest r = makeRequest(API_REQUEST_LOCATE);
+    r.id1 = spoolId;
+    r.id2 = locationId;
+    r.str1 = spoolTagUuid;
+    r.str2 = locationTagUuid;
+    enqueueRequest(r);
 }
 
 void sendRfidResultAsync(String tagUuid, int spoolId, int locationId, bool success, String errorMessage, float remainingWeight) {
     if (!checkFilamanRegistration()) return;
-    if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        for(int i=0; i<MAX_API_QUEUE; i++) if(!apiQueue[i].active) {
-            apiQueue[i].type = API_REQUEST_RFID_RESULT;
-            apiQueue[i].str1 = tagUuid;
-            apiQueue[i].id1 = spoolId;
-            apiQueue[i].id2 = locationId;
-            apiQueue[i].bool1 = success;
-            apiQueue[i].str3 = errorMessage;
-            apiQueue[i].remainingWeight = remainingWeight;
-            apiQueue[i].active = true;
-            break;
-        }
-        xSemaphoreGive(queueMutex);
-    }
+    ApiRequest r = makeRequest(API_REQUEST_RFID_RESULT);
+    r.str1 = tagUuid;
+    r.id1 = spoolId;
+    r.id2 = locationId;
+    r.bool1 = success;
+    r.str3 = errorMessage;
+    r.remainingWeight = remainingWeight;
+    enqueueRequest(r);
 }
 
 void sendTagDataAsync(String tagJson) {
     if (!checkFilamanRegistration()) return;
-    if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        for(int i=0; i<MAX_API_QUEUE; i++) if(!apiQueue[i].active) {
-            apiQueue[i].type = API_REQUEST_TAG_DATA;
-            apiQueue[i].str1 = tagJson;
-            apiQueue[i].id1 = 0;
-            apiQueue[i].id2 = 0;
-            apiQueue[i].str2 = "";
-            apiQueue[i].val = 0.0f;
-            apiQueue[i].active = true;
-            break;
-        }
-        xSemaphoreGive(queueMutex);
-    }
+    ApiRequest r = makeRequest(API_REQUEST_TAG_DATA);
+    r.str1 = tagJson;
+    enqueueRequest(r);
 }
 
 bool initFilaman() {
@@ -399,7 +388,7 @@ bool initFilaman() {
     queueMutex = xSemaphoreCreateMutex();
     // Move to Core 1 (Hardware Core) to free up Core 0 for WiFi/Webserver
     // Set priority to 1 (same as Scale/NFC) to ensure fair scheduling
-    xTaskCreatePinnedToCore(filamanApiTask, "FilaManApi", 6144, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(filamanApiTask, "FilaManApi", 8192, NULL, 1, NULL, 1);
     if (checkFilamanRegistration()) sendHeartbeatAsync();
     return true;
 }

@@ -6,9 +6,6 @@
 #include "lang.h"
 
 
-// Globale Variablen für Config Backups hinzufügen
-String filamanConfigBackup;
-
 // Globale Variable für den Update-Typ
 static int currentUpdateCommand = 0;
 
@@ -17,6 +14,26 @@ static size_t updateTotalSize = 0;
 static size_t updateWritten = 0;
 static bool isSpiffsUpdate = false;
 static size_t lastYieldAt = 0;  // Für WiFi-Yield während großer Uploads
+
+// Upload-Zustand (wird bei index == 0 zurückgesetzt)
+static bool uploadFailed = false;
+static bool uploadFinished = false;
+static const char* uploadErrorMessage = "Update failed";
+static bool restartScheduled = false;
+
+// Gibt die beim Upload pausierten Tasks wieder frei.
+static void releaseUpdateTasks() {
+    nfcReadingTaskSuspendRequest = false;
+    scalePauseRequest = false;
+}
+
+// Bricht den laufenden Upload ab und gibt die Tasks wieder frei.
+static void failUpload(const char* message) {
+    uploadFailed = true;
+    uploadErrorMessage = message;
+    Update.abort();
+    releaseUpdateTasks();
+}
 
 /**
  * Compares two version strings and determines if version1 is less than version2
@@ -47,14 +64,6 @@ bool isVersionLessThan(const String& version1, const String& version2) {
     return patch1 < patch2;
 }
 
-void backupJsonConfigs() {
-    // No more JSON configs to backup, using NVS
-}
-
-void restoreJsonConfigs() {
-    // No more JSON configs to restore, using NVS
-}
-
 void espRestart() {
     yield();
     vTaskDelay(pdMS_TO_TICKS(5000));
@@ -62,6 +71,14 @@ void espRestart() {
     ESP.restart();
 }
 
+
+// Einmaliger Task: Neustart verzögert ausführen, ohne den Async-Handler zu blockieren.
+static void restartAfterUpdateTask(void* pv) {
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    ws.textAll("{\"type\":\"updateProgress\",\"progress\":100,\"status\":\"success\",\"message\":\"Update successful! Restarting device...\"}");
+    espRestart();
+    vTaskDelete(NULL);
+}
 
 void sendUpdateProgress(int progress, const char* status = nullptr, const char* message = nullptr) {
     static int lastSentProgress = -1;
@@ -115,74 +132,75 @@ void handleUpdate(AsyncWebServer &server) {
     updateHandler->onUpload([](AsyncWebServerRequest *request, String filename,
                              size_t index, uint8_t *data, size_t len, bool final) {
 
-        // Disable all Tasks
-        if (ScaleTask) {
-            Serial.println("Delete ScaleTask");
-            vTaskDelete(ScaleTask);
-            ScaleTask = NULL;
-        }
-        if (RfidReaderTask) {
-            Serial.println("Delete RfidReaderTask");
-            vTaskDelete(RfidReaderTask);
-            RfidReaderTask = NULL;
-        }
-
         if (!index) {
+            uploadFailed = false;
+            uploadFinished = false;
+            uploadErrorMessage = "Update failed";
             updateTotalSize = request->contentLength();
             updateWritten = 0;
             lastYieldAt = 0;  // Reset yield counter
             isSpiffsUpdate = (filename.indexOf("website") > -1);
-            
+
+            // Bricht der Client ab, bevor das Update fertig ist: aufräumen.
+            request->onDisconnect([]() {
+                if (!uploadFinished) {
+                    Update.abort();
+                    uploadFailed = true;
+                    releaseUpdateTasks();
+                }
+            });
+
+            bool started;
             if (isSpiffsUpdate) {
-                // Backup vor dem Update
-                sendUpdateProgress(0, "backup", "Backing up configurations...");
-                vTaskDelay(pdMS_TO_TICKS(200));
-                backupJsonConfigs();
-                vTaskDelay(pdMS_TO_TICKS(200));
-                
                 const esp_partition_t *partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, NULL);
-                if (!partition || !Update.begin(partition->size, U_SPIFFS)) {
-                    request->send(400, "application/json", "{\"success\":false,\"message\":\"Update initialization failed\"}");
-                    return;
-                }
-                sendUpdateProgress(5, "starting", "Starting SPIFFS update...");
-                vTaskDelay(pdMS_TO_TICKS(100));
+                started = partition && Update.begin(partition->size, U_SPIFFS);
             } else {
-                if (!Update.begin(updateTotalSize)) {
-                    request->send(400, "application/json", "{\"success\":false,\"message\":\"Update initialization failed\"}");
-                    return;
-                }
+                started = Update.begin(updateTotalSize);
+            }
+            if (!started) {
+                failUpload("Update initialization failed");
+                return;
+            }
+
+            // Erst nach erfolgreichem begin() die anderen Tasks anhalten.
+            nfcReadingTaskSuspendRequest = true;  // Reader pausiert selbst (hält ggf. den I2C-Lock)
+            scalePauseRequest = true;             // Scale-Loop pausiert selbst (hält ggf. den Display-Mutex)
+
+            if (isSpiffsUpdate) {
+                sendUpdateProgress(5, "starting", "Starting SPIFFS update...");
+            } else {
                 sendUpdateProgress(0, "starting", "Starting firmware update...");
-                vTaskDelay(pdMS_TO_TICKS(100));
             }
         }
 
+        if (uploadFailed) return;  // weitere Chunks ignorieren
+
         if (len) {
             if (Update.write(data, len) != len) {
-                request->send(400, "application/json", "{\"success\":false,\"message\":\"Write failed\"}");
+                failUpload("Write failed");
                 return;
             }
-            
+
             updateWritten += len;
-            
+
             // KRITISCH: Yield alle 32KB für WiFi-Stack bei großen Uploads (1.5-2MB)
             // Ohne dies kann der WiFi-Stack blockieren und der Upload hängen bleiben
             if (updateWritten - lastYieldAt >= 32768) {
                 vTaskDelay(pdMS_TO_TICKS(5));  // Kurze Pause für WiFi-Stack
                 lastYieldAt = updateWritten;
             }
-            
-            int currentProgress;
-            
-            // Berechne den Fortschritt basierend auf dem Update-Typ
-            if (isSpiffsUpdate) {
-                // SPIFFS: 5-100% für Upload
-                currentProgress = 5 + (updateWritten * 95) / updateTotalSize;
-            } else {
-                // Firmware: 0-100% für Upload
-                currentProgress = (updateWritten * 100) / updateTotalSize;
+
+            int currentProgress = 0;
+            if (updateTotalSize > 0) {
+                if (isSpiffsUpdate) {
+                    // SPIFFS: 5-100% für Upload
+                    currentProgress = 5 + (updateWritten * 95) / updateTotalSize;
+                } else {
+                    // Firmware: 0-100% für Upload
+                    currentProgress = (updateWritten * 100) / updateTotalSize;
+                }
             }
-            
+
             static int lastProgress = -1;
             // Nur alle 5% Progress-Updates senden (reduziert WebSocket-Traffic)
             if (currentProgress != lastProgress && (currentProgress % 5 == 0 || final)) {
@@ -194,34 +212,35 @@ void handleUpdate(AsyncWebServer &server) {
 
         if (final) {
             if (Update.end(true)) {
-                if (isSpiffsUpdate) {
-                    restoreJsonConfigs();
-                }
+                uploadFinished = true;
             } else {
-                request->send(400, "application/json", "{\"success\":false,\"message\":\"Update finalization failed\"}");
+                failUpload("Update finalization failed");
             }
         }
     });
 
     updateHandler->onRequest([](AsyncWebServerRequest *request) {
-        if (Update.hasError()) {
-            request->send(400, "application/json", "{\"success\":false,\"message\":\"Update failed\"}");
+        if (!(uploadFinished && !uploadFailed && !Update.hasError())) {
+            String msg = String("{\"success\":false,\"message\":\"") + uploadErrorMessage + "\"}";
+            request->send(400, "application/json", msg);
             return;
         }
 
         // Erste 100% Nachricht
         ws.textAll("{\"type\":\"updateProgress\",\"progress\":100,\"status\":\"success\",\"message\":\"Update successful! Restarting device...\"}");
-        vTaskDelay(pdMS_TO_TICKS(2000));
-        
-        AsyncWebServerResponse *response = request->beginResponse(200, "application/json", 
+
+        AsyncWebServerResponse *response = request->beginResponse(200, "application/json",
             "{\"success\":true,\"message\":\"Update successful! Restarting device...\"}");
         response->addHeader("Connection", "close");
         request->send(response);
-        
-        // Zweite 100% Nachricht zur Sicherheit
-        ws.textAll("{\"type\":\"updateProgress\",\"progress\":100,\"status\":\"success\",\"message\":\"Update successful! Restarting device...\"}");
-        
-        espRestart();
+
+        // Zweite Nachricht + Neustart verzögert in eigenem Task (nicht im Async-Handler blockieren)
+        if (!restartScheduled) {
+            restartScheduled = true;
+            if (xTaskCreate(restartAfterUpdateTask, "OtaRestart", 3072, NULL, 1, NULL) != pdPASS) {
+                ESP.restart();
+            }
+        }
     });
 
     server.addHandler(updateHandler);
