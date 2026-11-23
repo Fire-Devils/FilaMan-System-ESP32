@@ -251,6 +251,11 @@ bool sendTagData(String tagJson) {
 
 void filamanApiTask(void* pvParameters) {
     for (;;) {
+        // Waehrend eines Firmware-Updates keine Queue-Requests (Berichte sendet der OTA-Task selbst).
+        if (firmwareUpdateActive()) {
+            vTaskDelay(pdMS_TO_TICKS(200));
+            continue;
+        }
         ApiRequest req;
         bool hasReq = false;
 

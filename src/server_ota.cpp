@@ -42,6 +42,7 @@ static volatile bool otaPending = false;   // neue Firmware laeuft, noch nicht b
 static volatile bool otaRunning = false;   // Download/Flash laeuft
 
 bool serverOtaInProgress() { return otaRunning; }
+bool firmwareUpdateActive() { return otaRunning || otaManualUploadActive(); }
 
 // ---------------------------------------------------------------- NVS ----
 
@@ -202,8 +203,10 @@ static bool partitionHasProject(const esp_partition_t* part, size_t size) {
 }
 
 static void showProgress(int pct) {
+    oledResetActivityTimer();  // Display nicht in den Schlaf gehen lassen
     oledShowProgressBar(pct, 100, tr(STR_UPDATE), tr(STR_DOWNLOAD));
-    oledSetPriority(DISPLAY_PRIORITY_ACTION, 3000);
+    // Lange halten: zwischen zwei Fortschrittsschritten darf nichts anderes zeichnen.
+    oledSetPriority(DISPLAY_PRIORITY_ACTION, 120000);
 }
 
 static void releaseTasks() {
@@ -262,17 +265,23 @@ static void installFirmware(const String& newVersion, uint32_t size, const Strin
     bool markerSeen = false;
     bool ok = true;
 
+    const uint32_t downloadStart = millis();
     while (remaining > 0) {
         if (WiFi.status() != WL_CONNECTED) { err = "WiFi lost"; ok = false; break; }
-        size_t avail = stream->available();
-        if (!avail) {
+        if (millis() - downloadStart > 10UL * 60UL * 1000UL) { err = "download took longer than 10 min"; ok = false; break; }
+        // available() liefert int; negative Werte (Fehler) duerfen nicht als riesige size_t durchrutschen.
+        int availRaw = stream->available();
+        size_t n = 0;
+        if (availRaw > 0) {
+            n = stream->readBytes(work + carry, min(min((size_t)availRaw, (size_t)SRVOTA_CHUNK), remaining));
+        }
+        if (n == 0) {
+            // Keine Daten: Verbindung pruefen und Frist zaehlen (auch wenn available() > 0 war, read() aber nichts lieferte).
             if (!stream->connected()) { err = "connection lost"; ok = false; break; }
             if (millis() - lastData > 15000) { err = "download timeout"; ok = false; break; }
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
         }
-        size_t n = stream->readBytes(work + carry, min(min(avail, (size_t)SRVOTA_CHUNK), remaining));
-        if (n == 0) continue;
         lastData = millis();
         mbedtls_sha256_update(&sha, work + carry, n);
         if (!markerSeen) markerSeen = containsNeedle(work, carry + n);

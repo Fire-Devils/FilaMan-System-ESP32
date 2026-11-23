@@ -122,6 +122,18 @@ const unsigned long connErrorShowInterval = 10000; // Show connection error ever
 
 // ##### PROGRAM START #####
 void loop() {
+  // Waehrend eines Firmware-Updates ruht alles andere (Anzeige, Heartbeat, Wiegen, WLAN-Check).
+  if (firmwareUpdateActive()) {
+    static unsigned long lastWsCleanupOta = 0;
+    if (millis() - lastWsCleanupOta >= 5000) {
+      ws.cleanupClients();
+      lastWsCleanupOta = millis();
+    }
+    mainTaskWasPaused = true;  // danach Gewichtsanzeige neu zeichnen
+    vTaskDelay(pdMS_TO_TICKS(50));
+    return;
+  }
+
   unsigned long currentMillis = millis();
 
   // Handle connection errors (not registered or not connected)

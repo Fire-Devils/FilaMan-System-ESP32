@@ -24,6 +24,10 @@ void serverOtaConfirm();
 // true, solange ein Server-Update heruntergeladen/geschrieben wird.
 bool serverOtaInProgress();
 
+// true waehrend JEDES Firmware-Updates (Server oder manueller Upload):
+// Hauptschleife, API-Queue, Heartbeat und Display-Updates ruhen dann.
+bool firmwareUpdateActive();
+
 // Manueller Upload hat eine Firmware installiert: pending/rolled_back verwerfen.
 void serverOtaResetState();
 
