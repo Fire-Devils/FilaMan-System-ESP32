@@ -14,6 +14,7 @@
 #include "esp_task_wdt.h"
 #include "commonFS.h"
 #include "lang.h"
+#include "server_ota.h"
 
 bool mainTaskWasPaused = 0;
 bool touchSensorConnected = false;
@@ -29,7 +30,10 @@ void setup() {
   Serial.printf("ESP32 Chip ID = %04X", (uint16_t)(chipid >> 32)); //print High 2 bytes
   Serial.printf("%08X\n", (uint32_t)chipid); //print Low 4bytes.
 
-  // Initialize SPIFFS
+  // Server-OTA: Boot-Zaehler/Software-Rollback so frueh wie moeglich
+  serverOtaEarlyInit();
+
+  // LittleFS (nur noch Konfiguration; Weboberflaeche liegt in der Firmware)
   initializeFileSystem();
 
   // Load language setting from NVS (before display init)
@@ -46,6 +50,9 @@ void setup() {
 
   // FilaMan API
   initFilaman();
+
+  // Firmware-Updates per WLAN vom FilaMan-Server
+  serverOtaStart();
 
   // NFC Reader
   startNfc();

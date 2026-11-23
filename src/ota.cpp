@@ -4,6 +4,7 @@
 #include "scale.h"
 #include "nfc.h"
 #include "lang.h"
+#include "server_ota.h"
 
 
 // Globale Variable für den Update-Typ
@@ -12,7 +13,6 @@ static int currentUpdateCommand = 0;
 // Globale Update-Variablen
 static size_t updateTotalSize = 0;
 static size_t updateWritten = 0;
-static bool isSpiffsUpdate = false;
 static size_t lastYieldAt = 0;  // Für WiFi-Yield während großer Uploads
 
 // Upload-Zustand (wird bei index == 0 zurückgesetzt)
@@ -20,9 +20,13 @@ static bool uploadFailed = false;
 static bool uploadFinished = false;
 static const char* uploadErrorMessage = "Update failed";
 static bool restartScheduled = false;
+static volatile bool manualUploadActive = false;  // Upload laeuft (Server-OTA wartet dann)
+
+bool otaManualUploadActive() { return manualUploadActive; }
 
 // Gibt die beim Upload pausierten Tasks wieder frei.
 static void releaseUpdateTasks() {
+    manualUploadActive = false;
     nfcReadingTaskSuspendRequest = false;
     scalePauseRequest = false;
 }
@@ -139,7 +143,20 @@ void handleUpdate(AsyncWebServer &server) {
             updateTotalSize = request->contentLength();
             updateWritten = 0;
             lastYieldAt = 0;  // Reset yield counter
-            isSpiffsUpdate = (filename.indexOf("website") > -1);
+
+            // Web-Oberflaeche ist seit der Server-OTA in der Firmware eingebettet:
+            // alte "website"-Images (LittleFS) werden nicht mehr angenommen.
+            if (filename.indexOf("website") > -1) {
+                uploadFailed = true;  // kein failUpload(): darf ein laufendes Server-Update nicht abbrechen
+                uploadErrorMessage = "Website images are no longer supported - upload the firmware file only";
+                return;
+            }
+            if (serverOtaInProgress()) {
+                uploadFailed = true;
+                uploadErrorMessage = "A server update is in progress";
+                return;
+            }
+            manualUploadActive = true;
 
             // Bricht der Client ab, bevor das Update fertig ist: aufräumen.
             request->onDisconnect([]() {
@@ -150,14 +167,7 @@ void handleUpdate(AsyncWebServer &server) {
                 }
             });
 
-            bool started;
-            if (isSpiffsUpdate) {
-                const esp_partition_t *partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, NULL);
-                started = partition && Update.begin(partition->size, U_SPIFFS);
-            } else {
-                started = Update.begin(updateTotalSize);
-            }
-            if (!started) {
+            if (!Update.begin(updateTotalSize)) {
                 failUpload("Update initialization failed");
                 return;
             }
@@ -166,11 +176,7 @@ void handleUpdate(AsyncWebServer &server) {
             nfcReadingTaskSuspendRequest = true;  // Reader pausiert selbst (hält ggf. den I2C-Lock)
             scalePauseRequest = true;             // Scale-Loop pausiert selbst (hält ggf. den Display-Mutex)
 
-            if (isSpiffsUpdate) {
-                sendUpdateProgress(5, "starting", "Starting SPIFFS update...");
-            } else {
-                sendUpdateProgress(0, "starting", "Starting firmware update...");
-            }
+            sendUpdateProgress(0, "starting", "Starting firmware update...");
         }
 
         if (uploadFailed) return;  // weitere Chunks ignorieren
@@ -192,13 +198,7 @@ void handleUpdate(AsyncWebServer &server) {
 
             int currentProgress = 0;
             if (updateTotalSize > 0) {
-                if (isSpiffsUpdate) {
-                    // SPIFFS: 5-100% für Upload
-                    currentProgress = 5 + (updateWritten * 95) / updateTotalSize;
-                } else {
-                    // Firmware: 0-100% für Upload
-                    currentProgress = (updateWritten * 100) / updateTotalSize;
-                }
+                currentProgress = (updateWritten * 100) / updateTotalSize;
             }
 
             static int lastProgress = -1;
@@ -213,6 +213,8 @@ void handleUpdate(AsyncWebServer &server) {
         if (final) {
             if (Update.end(true)) {
                 uploadFinished = true;
+                manualUploadActive = false;
+                serverOtaResetState();  // manuelles Update: Rollback-/Pending-Zustand verwerfen
             } else {
                 failUpload("Update finalization failed");
             }

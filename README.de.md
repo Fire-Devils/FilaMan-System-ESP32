@@ -198,6 +198,19 @@ A+ grün*
     - Konfigurieren Sie die WiFi-Einstellungen über das Captive Portal.
     - Greifen Sie über `http://filaman.local` oder die IP-Adresse auf die Weboberfläche zu.
 
+## Updates per WLAN (OTA)
+
+Am FilaMan-Server registrierte Geräte holen Firmware-Updates direkt vom Server, ohne Kabel.
+
+- **Ablauf:** 30 s (+ 0-30 s Zufall) nach der ersten Verbindung und danach alle 6 h (+ 0-30 min Zufall) fragt das Gerät `GET /api/v1/devices/firmware/latest?project=<Projekt>`. Bietet der Server eine andere Version an, lädt das Gerät sie herunter, prüft Größe und SHA-256 sowie die Projektkennung im Image, installiert sie und startet neu. Solange ein manueller Upload, ein NFC-Schreibvorgang, eine Kalibrierung oder ein Wiegevorgang läuft, wird nichts installiert; das Gerät versucht es später erneut.
+- **Projektkennungen:** `filaman-scale-esp32` (ESP32) und `filaman-scale-esp32s3` (ESP32-S3). Sie stehen in jedem Image als `FMFWINFO1:project=...;version=...;`; der Server liest Projekt und Version nur aus diesem Marker, das Gerät lehnt Images eines anderen Projekts ab.
+- **Sicherheit:** Der Download-Pfad muss mit `/api/v1/devices/firmware/` beginnen, Redirects werden nie verfolgt, der Geräte-Token geht also nur an den eigenen FilaMan-Server.
+- **Rollback:** Der Arduino-Bootloader hat keinen Hardware-Rollback, daher übernimmt die Firmware das in Software. Nach einem Update muss die neue Firmware innerhalb von 300 s mit WLAN-Verbindung eine 2xx-Antwort vom Server erhalten (Heartbeat, Bericht oder Manifest; Zeit ohne WLAN zählt nicht) und darf nicht öfter als 3-mal neu starten, sonst schaltet das Gerät auf die vorige Firmware zurück und meldet `rolled_back`. Eine zurückgerollte Version wird nicht automatisch erneut installiert. Nicht registrierte Geräte bestätigen sofort.
+- **Weboberfläche:** Sie ist Teil des Firmware-Images (kein separates Website-/LittleFS-Image mehr). LittleFS enthält nur noch die Gerätekonfiguration.
+- **Erst-Flash** (leere Geräte oder per Kabel / Web-Installer): `filaman_full_<Version>.bin` (ESP32) bzw. `filaman_full_esp32s3_<Version>.bin` (ESP32-S3) bei Offset 0.
+- **Manuelles Update:** `upgrade_filaman_firmware_v<Version>.bin` (ESP32) bzw. `upgrade_filaman_firmware_esp32s3_v<Version>.bin` (ESP32-S3) auf der Seite `/upgrade` des Geräts hochladen.
+- **Bestehende Geräte (älter als dieses Feature)** müssen einmal manuell mit `upgrade_filaman_firmware_*.bin` aktualisiert werden. Danach kommen Updates vom Server. Das alte separate Website-Image wird nicht mehr gebraucht und nicht mehr akzeptiert.
+
 ## Dokumentation
 
 ### Relevante Links

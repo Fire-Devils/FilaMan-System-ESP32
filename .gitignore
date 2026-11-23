@@ -31,3 +31,4 @@ website/*
 release.sh
 wiki
 _*
+src/generated/

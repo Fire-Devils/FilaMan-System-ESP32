@@ -56,16 +56,6 @@
                     </form>
                 </div>
 
-                <div class="fm-card">
-                    <h2>Webpage Update</h2>
-                    <p>Update the internal web interface assets.</p>
-                    <form id="webpageForm" enctype='multipart/form-data' data-type="webpage">
-                        <div class="fm-form-group">
-                            <input type='file' name='update' accept='.bin' required class="fm-input">
-                        </div>
-                        <input type='submit' value='Start Update' class="fm-btn fm-btn-outline" style="width: 100%;">
-                    </form>
-                </div>
             </div>
 
             <div id="progressContainer" class="fm-card" style="display: none; margin-top: 2rem;">
@@ -151,7 +141,6 @@
         }
 
         document.getElementById('firmwareForm').addEventListener('submit', handleUpdate);
-        document.getElementById('webpageForm').addEventListener('submit', handleUpdate);
     </script>
 </body>
 </html>

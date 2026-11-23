@@ -40,11 +40,30 @@ Geräte sollten regelmäßig einen Heartbeat senden, um ihren Status auf "Online
 - **Request Body:**
   ```json
   {
-    "ip_address": "192.168.1.100"
+    "ip_address": "192.168.1.100",
+    "firmware_version": "3.5.0",
+    "firmware_project": "filaman-scale-esp32"
   }
   ```
+  `firmware_version` und `firmware_project` sind optional (ältere Firmware sendet sie nicht). Projekte: `filaman-scale-esp32`, `filaman-scale-esp32s3`.
 - **Response:** `{"status": "ok"}`
 - **Frequenz:** Empfohlen alle 60-120 Sekunden. Ein Gerät gilt nach 180 Sekunden Inaktivität als offline.
+
+---
+
+### Firmware-Update per WLAN (OTA)
+Alle Endpunkte mit `Authorization: Device <token>`. Der Server liest Projekt/Version eines Uploads ausschließlich aus dem Marker `FMFWINFO1:project=<projekt>;version=<version>;` im Image.
+
+- **Neueste Firmware abfragen:** `GET /api/v1/devices/firmware/latest?project=<projekt>`
+  - `200`: `{"project": "...", "version": "...", "size": 1588512, "sha256": "<64 hex>", "url": "/api/v1/devices/firmware/<datei>"}`
+  - `404`: nichts zu tun.
+- **Binärdatei laden:** `GET {filamanUrl}{url}` (Content-Length Pflicht, kein Chunked-Encoding; das Gerät folgt keinen Redirects). `url` muss mit `/api/v1/devices/firmware/` beginnen.
+- **Ergebnis melden:** `POST /api/v1/devices/ota-report`
+  ```json
+  { "from_version": "3.4.11", "to_version": "3.5.0", "result": "started", "error": null }
+  ```
+  `result`: `started` | `ok` | `failed` | `rolled_back`; `error` ist ein Text oder `null`. Bei `rolled_back` ist `from_version` die wiederhergestellte, `to_version` die fehlgeschlagene Version.
+- **Ablauf/Rollback:** siehe README (Abschnitt "Updates per WLAN"). Eine 2xx-Antwort auf Heartbeat, Bericht oder Manifest bestätigt eine neu installierte Firmware innerhalb von 300 s.
 
 ---
 

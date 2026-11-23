@@ -10,6 +10,7 @@
 #include <WiFi.h>
 #include "display.h"
 #include "lang.h"
+#include "server_ota.h"
 
 volatile filamanApiStateType filamanApiState = API_IDLE;
 bool filamanConnected = false;
@@ -110,10 +111,13 @@ bool sendHeartbeat() {
     http.addHeader("Authorization", "Device " + filamanToken);
     JsonDocument doc;
     doc["ip_address"] = WiFi.localIP().toString();
+    doc["firmware_version"] = VERSION;
+    doc["firmware_project"] = FW_PROJECT;
     String payload;
     serializeJson(doc, payload);
     int httpCode = http.POST(payload);
     filamanConnected = (httpCode == 200);
+    if (httpCode >= 200 && httpCode < 300) serverOtaConfirm();
     http.end();
     return filamanConnected;
 }

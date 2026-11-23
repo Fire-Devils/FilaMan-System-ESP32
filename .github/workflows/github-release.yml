@@ -38,34 +38,51 @@ jobs:
     - name: Build Firmware
       run: |
         VERSION=$(grep '^version = ' platformio.ini | cut -d'"' -f2)
-        
-        # Always build firmware and LittleFS
-        echo "Building firmware and LittleFS..."
-        pio run -e esp32dev
-        pio run -t buildfs
-        
-        # Copy firmware binary
-        cp .pio/build/esp32dev/firmware.bin .pio/build/esp32dev/upgrade_filaman_firmware_v${VERSION}.bin
-        
-        # Create LittleFS binary - direct copy without header
-        cp .pio/build/esp32dev/littlefs.bin .pio/build/esp32dev/upgrade_filaman_website_v${VERSION}.bin
-        
-        # Create full binary (always)
-        (cd .pio/build/esp32dev && 
+
+        # Beide Envs bauen (Web-Oberflaeche ist in der Firmware eingebettet, kein LittleFS-Image)
+        pio run -e esp32dev -e esp32-s3-devkitc-1
+
+        # boot_app0.bin aus dem PlatformIO-Framework-Paket (Pfad robust ermitteln)
+        BOOT_APP0=$(find "${PLATFORMIO_CORE_DIR:-$HOME/.platformio}/packages" -path '*framework-arduinoespressif32*/tools/partitions/boot_app0.bin' | head -n1)
+        if [ -z "$BOOT_APP0" ]; then echo "Error: boot_app0.bin not found"; exit 1; fi
+        echo "boot_app0.bin: $BOOT_APP0"
+
+        OUT=.pio/release
+        mkdir -p "$OUT"
+
+        # Upgrade-Dateien: Upload fuer den FilaMan-Server UND fuer die alte Upgrade-Seite.
+        # Dateinamen duerfen NIE "website" enthalten (alte Geraete behandeln das als LittleFS-Image).
+        cp .pio/build/esp32dev/firmware.bin "$OUT/upgrade_filaman_firmware_v${VERSION}.bin"
+        cp .pio/build/esp32-s3-devkitc-1/firmware.bin "$OUT/upgrade_filaman_firmware_esp32s3_v${VERSION}.bin"
+
+        # Initial-Images (Kabel / Web-Installer) fuer leere oder alte Geraete
+        (cd .pio/build/esp32dev &&
         esptool.py --chip esp32 merge_bin \
           --fill-flash-size 4MB \
           --flash_mode dio \
           --flash_freq 40m \
           --flash_size 4MB \
-          -o filaman_full_${VERSION}.bin \
+          -o "$GITHUB_WORKSPACE/$OUT/filaman_full_${VERSION}.bin" \
           0x1000 bootloader.bin \
           0x8000 partitions.bin \
-          0x10000 firmware.bin \
-          0x3D0000 littlefs.bin)
-        
+          0xe000 "$BOOT_APP0" \
+          0x10000 firmware.bin)
+
+        (cd .pio/build/esp32-s3-devkitc-1 &&
+        esptool.py --chip esp32s3 merge_bin \
+          --fill-flash-size 8MB \
+          --flash_mode dio \
+          --flash_freq 80m \
+          --flash_size 8MB \
+          -o "$GITHUB_WORKSPACE/$OUT/filaman_full_esp32s3_${VERSION}.bin" \
+          0x0 bootloader.bin \
+          0x8000 partitions.bin \
+          0xe000 "$BOOT_APP0" \
+          0x10000 firmware.bin)
+
         # Verify file sizes
         echo "File sizes:"
-        (cd .pio/build/esp32dev && ls -lh *.bin)
+        ls -lh "$OUT"
     
     - name: Get version from platformio.ini
       id: get_version
@@ -122,25 +139,16 @@ jobs:
         RELEASE_NOTES: ${{ steps.release_notes.outputs.CHANGES }}
       run: |
         VERSION=${{ steps.get_version.outputs.VERSION }}
-        cd .pio/build/esp32dev
+        cd .pio/release
         
         # Create release with available files
         FILES_TO_UPLOAD=""
-        
-        # Always add firmware
-        if [ -f "upgrade_filaman_firmware_v${VERSION}.bin" ]; then
-          FILES_TO_UPLOAD="$FILES_TO_UPLOAD upgrade_filaman_firmware_v${VERSION}.bin"
-        fi
-        
-        # Add LittleFS and full binary only if they exist
-        if [ -f "upgrade_filaman_website_v${VERSION}.bin" ]; then
-          FILES_TO_UPLOAD="$FILES_TO_UPLOAD upgrade_filaman_website_v${VERSION}.bin"
-        fi
-        
-        if [ -f "filaman_full_${VERSION}.bin" ]; then
-          FILES_TO_UPLOAD="$FILES_TO_UPLOAD filaman_full_${VERSION}.bin"
-        fi
-        
+        for file in upgrade_filaman_firmware_v${VERSION}.bin upgrade_filaman_firmware_esp32s3_v${VERSION}.bin filaman_full_${VERSION}.bin filaman_full_esp32s3_${VERSION}.bin; do
+          if [ -f "$file" ]; then
+            FILES_TO_UPLOAD="$FILES_TO_UPLOAD $file"
+          fi
+        done
+
         # Create release with available files
         if [ -n "$FILES_TO_UPLOAD" ]; then
           gh release create "v${VERSION}" \

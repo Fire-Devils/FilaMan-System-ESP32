@@ -13,6 +13,7 @@
 #include "debug.h"
 #include "lang.h"
 #include "wlan.h"
+#include "generated/web_assets.h"
 
 #ifndef VERSION
   #define VERSION "1.2.0"
@@ -34,6 +35,21 @@ String templateProcessor(const String& var) {
     if (var == "filamanUrl") return filamanUrl;
     if (var == "autoTare") return autoTare ? "checked" : "";
     return String();  // Unbekannte Variable - leer zurückgeben
+}
+
+// Liefert eine eingebettete Webdatei aus dem Flash aus (gzip bzw. Template-Processor).
+static void sendWebAsset(AsyncWebServerRequest *request, const char* path, const char* cacheControl) {
+    for (size_t i = 0; i < WEB_ASSET_COUNT; i++) {
+        const WebAsset& a = WEB_ASSETS[i];
+        if (strcmp(a.path, path) != 0) continue;
+        AsyncWebServerResponse *response = request->beginResponse(
+            200, a.mime, a.data, a.len, a.tmpl ? AwsTemplateProcessor(templateProcessor) : AwsTemplateProcessor(nullptr));
+        if (a.gzip) response->addHeader("Content-Encoding", "gzip");
+        response->addHeader("Cache-Control", cacheControl);
+        request->send(response);
+        return;
+    }
+    request->send(404, "text/plain", "Not found");
 }
 
 void sendNfcDataToClient(AsyncWebSocketClient *client) {
@@ -136,47 +152,36 @@ void setupWebserver(AsyncWebServer &server) {
     ws.onEvent(onWsEvent);
     server.addHandler(&ws);
 
-    // ===== STATISCHE ASSETS mit serveStatic() =====
-    // Optimiert für concurrent Requests, mit 24h Browser-Cache
-    // serveStatic() ist nicht-blockierend und handhabt parallele Requests besser
-    server.serveStatic("/style.css", LittleFS, "/style.css")
-        .setCacheControl(CACHE_ASSETS);
-    server.serveStatic("/logo.png", LittleFS, "/logo.png")
-        .setCacheControl(CACHE_ASSETS);
-    server.serveStatic("/favicon.ico", LittleFS, "/favicon.ico")
-        .setCacheControl(CACHE_ASSETS);
-
-    // ===== STATISCHE HTML-SEITEN (ohne Template-Ersetzung) =====
+    // ===== WEBOBERFLAECHE AUS DEM FLASH =====
+    // Alle Dateien aus data/ sind per scripts/embed_web.py in die Firmware
+    // eingebettet (src/generated/web_assets.h). Statische Dateien sind gzip-
+    // komprimiert, Template-Seiten (waage, setup) unkomprimiert.
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-        Serial.println("Web: Request /");
-        request->send(LittleFS, "/index.html", "text/html");
+        sendWebAsset(request, "/index.html", NO_CACHE);
     });
-
     server.on("/wifi", HTTP_GET, [](AsyncWebServerRequest *request){
-        Serial.println("Web: Request /wifi");
-        request->send(LittleFS, "/wifi.html", "text/html");
+        sendWebAsset(request, "/wifi.html", NO_CACHE);
     });
-
-    server.on("/upgrade", HTTP_GET, [](AsyncWebServerRequest *request) {
-        Serial.println("Web: Request /upgrade");
-        request->send(LittleFS, "/upgrade.html", "text/html");
+    server.on("/upgrade", HTTP_GET, [](AsyncWebServerRequest *request){
+        sendWebAsset(request, "/upgrade.html", NO_CACHE);
     });
-
-    server.on("/version.txt", HTTP_GET, [](AsyncWebServerRequest *request){
-        request->send(LittleFS, "/version.txt", "text/plain");
-    });
-
-    // ===== DYNAMISCHE HTML-SEITEN (mit Template-Processor) =====
-    // Nutzt den eingebauten Template-Processor für %variable% Ersetzung
-    // Nicht-blockierend: Datei wird gestreamt und Variablen on-the-fly ersetzt
     server.on("/waage", HTTP_GET, [](AsyncWebServerRequest *request){
-        Serial.println("Web: Request /waage");
-        request->send(LittleFS, "/waage.html", "text/html", false, templateProcessor);
+        sendWebAsset(request, "/waage.html", NO_CACHE);
     });
-
     server.on("/setup", HTTP_GET, [](AsyncWebServerRequest *request){
-        Serial.println("Web: Request /setup");
-        request->send(LittleFS, "/setup.html", "text/html", false, templateProcessor);
+        sendWebAsset(request, "/setup.html", NO_CACHE);
+    });
+    server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *request){
+        sendWebAsset(request, "/style.css", CACHE_ASSETS);
+    });
+    server.on("/logo.png", HTTP_GET, [](AsyncWebServerRequest *request){
+        sendWebAsset(request, "/logo.png", CACHE_ASSETS);
+    });
+    server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request){
+        sendWebAsset(request, "/favicon.ico", CACHE_ASSETS);
+    });
+    server.on("/version.txt", HTTP_GET, [](AsyncWebServerRequest *request){
+        request->send(200, "text/plain", VERSION);
     });
 
     // API Routes
