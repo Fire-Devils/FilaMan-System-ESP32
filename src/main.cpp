@@ -130,6 +130,9 @@ void loop() {
       lastWsCleanupOta = millis();
     }
     mainTaskWasPaused = true;  // danach Gewichtsanzeige neu zeichnen
+    // loop() ist beim Task-Watchdog angemeldet (10 s, Panic) und fuettert ihn sonst erst am Ende.
+    // Ohne diesen Reset startet der ESP mitten im Update neu.
+    esp_task_wdt_reset();
     vTaskDelay(pdMS_TO_TICKS(50));
     return;
   }
