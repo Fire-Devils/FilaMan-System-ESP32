@@ -43,6 +43,8 @@ static const size_t NEEDLE_LEN = sizeof(PROJECT_NEEDLE) - 1;
 
 static volatile bool otaPending = false;   // neue Firmware laeuft, noch nicht bestaetigt
 static volatile bool otaRunning = false;   // Download/Flash laeuft
+static volatile bool reportOkPending = false;  // nach Bestaetigung "ok" aus der neuen Firmware melden
+static String pendingFrom, pendingTo;
 
 bool serverOtaInProgress() { return otaRunning; }
 bool firmwareUpdateActive() { return otaRunning || otaManualUploadActive(); }
@@ -61,6 +63,8 @@ void serverOtaConfirm() {
     if (!otaPending) return;
     otaPending = false;
     clearPendingNvs();
+    // Der "ok"-Bericht vor dem Neustart kann verloren gehen; die laufende neue Firmware meldet es sicher.
+    if (pendingTo.length() > 0) reportOkPending = true;
     Serial.println("ServerOTA: new firmware confirmed");
 }
 
@@ -107,6 +111,8 @@ void serverOtaEarlyInit() {
     if (!p.begin(SRVOTA_NS, false)) return;
     bool pending = p.getBool("pending", false);
     if (pending) {
+        pendingFrom = p.getString("from", "");
+        pendingTo = p.getString("to", "");
         uint8_t boots = p.getUChar("boots", 0) + 1;
         p.putUChar("boots", boots);
         p.end();
@@ -418,7 +424,8 @@ static bool reportRollbackIfNeeded() {
     bool rb = p.getBool("rb", false);
     String from = p.getString("from", "");
     String to = p.getString("to", "");
-    String err = p.getString("rberr", "rollback");
+    // isKey() vermeidet die NOT_FOUND-Fehlermeldung von Preferences im Log
+    String err = p.isKey("rberr") ? p.getString("rberr", "rollback") : String("rollback");
     p.end();
     if (!rb) return true;
     // Nach dem Rollback laeuft die alte Firmware: "from" = alte, "to" = fehlgeschlagene Version.
@@ -455,6 +462,12 @@ static void serverOtaTask(void*) {
         }
 
         if (!online || otaRunning) continue;
+
+        static uint32_t nextOkReportAt = 0;
+        if (reportOkPending && (int32_t)(now - nextOkReportAt) >= 0) {
+            if (sendOtaReport(pendingFrom, pendingTo, "ok", "")) reportOkPending = false;
+            else nextOkReportAt = now + 30000UL;  // Server gerade nicht erreichbar: spaeter erneut
+        }
 
         if (!rbDone && (int32_t)(now - nextRbReportAt) >= 0) {
             rbDone = reportRollbackIfNeeded();
