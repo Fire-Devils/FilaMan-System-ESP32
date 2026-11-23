@@ -37,8 +37,8 @@ static const size_t NEEDLE_LEN = sizeof(PROJECT_NEEDLE) - 1;
 #define SRVOTA_CONFIRM_MS       300000UL   // Frist bis zur Server-Bestaetigung nach einem Update
 #define SRVOTA_MAX_BOOTS        3
 #define SRVOTA_CHUNK            4096
-#define SRVOTA_MAX_ATTEMPTS     6          // Download-Versuche inkl. Fortsetzungen per Range
-#define SRVOTA_STALL_MS         30000UL    // so lange ohne Daten, dann neu verbinden
+#define SRVOTA_MAX_ATTEMPTS     10         // Download-Versuche inkl. Fortsetzungen per Range
+#define SRVOTA_STALL_MS         10000UL    // so lange ohne Daten, dann neu verbinden (Fortsetzen ist billiger als TCP-Backoff)
 #define SRVOTA_MAX_DOWNLOAD_MS  (15UL * 60UL * 1000UL)
 
 static volatile bool otaPending = false;   // neue Firmware laeuft, noch nicht bestaetigt
