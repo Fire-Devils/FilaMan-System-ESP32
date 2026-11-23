@@ -37,6 +37,9 @@ static const size_t NEEDLE_LEN = sizeof(PROJECT_NEEDLE) - 1;
 #define SRVOTA_CONFIRM_MS       300000UL   // Frist bis zur Server-Bestaetigung nach einem Update
 #define SRVOTA_MAX_BOOTS        3
 #define SRVOTA_CHUNK            4096
+#define SRVOTA_MAX_ATTEMPTS     6          // Download-Versuche inkl. Fortsetzungen per Range
+#define SRVOTA_STALL_MS         30000UL    // so lange ohne Daten, dann neu verbinden
+#define SRVOTA_MAX_DOWNLOAD_MS  (15UL * 60UL * 1000UL)
 
 static volatile bool otaPending = false;   // neue Firmware laeuft, noch nicht bestaetigt
 static volatile bool otaRunning = false;   // Download/Flash laeuft
@@ -241,62 +244,87 @@ static void installFirmware(const String& newVersion, uint32_t size, const Strin
     vTaskDelay(pdMS_TO_TICKS(300));
     showProgress(0);
 
-    HTTPClient http;
-    prepareHttp(http, filamanUrl + path, 15000);
-    http.useHTTP10(true);  // kein Chunked-Encoding: Content-Length ist Pflicht
-    int code = http.GET();
-    if (code != HTTP_CODE_OK) { http.end(); fail("download HTTP " + String(code)); return; }
-    int len = http.getSize();
-    if (len < 0 || (uint32_t)len != size) { http.end(); fail("content-length mismatch"); return; }
-    if (!Update.begin(size, U_FLASH)) { http.end(); fail(String("Update.begin: ") + Update.errorString()); return; }
+    if (!Update.begin(size, U_FLASH)) { fail(String("Update.begin: ") + Update.errorString()); return; }
 
     const size_t carryMax = NEEDLE_LEN - 1;
     uint8_t* work = (uint8_t*)malloc(carryMax + SRVOTA_CHUNK);
-    if (!work) { http.end(); fail("out of memory"); return; }
+    if (!work) { fail("out of memory"); return; }
 
     mbedtls_sha256_context sha;
     mbedtls_sha256_init(&sha);
     mbedtls_sha256_starts(&sha, 0);
 
-    WiFiClient* stream = http.getStreamPtr();
-    size_t remaining = size, carry = 0, sinceYield = 0;
-    uint32_t lastData = millis();
-    int lastPct = -1;
+    size_t written = 0, carry = 0, sinceYield = 0;
+    int lastPct = -1, lastLogPct = -10;
     bool markerSeen = false;
     bool ok = true;
-
     const uint32_t downloadStart = millis();
-    while (remaining > 0) {
-        if (WiFi.status() != WL_CONNECTED) { err = "WiFi lost"; ok = false; break; }
-        if (millis() - downloadStart > 10UL * 60UL * 1000UL) { err = "download took longer than 10 min"; ok = false; break; }
-        // available() liefert int; negative Werte (Fehler) duerfen nicht als riesige size_t durchrutschen.
-        int availRaw = stream->available();
-        size_t n = 0;
-        if (availRaw > 0) {
-            n = stream->readBytes(work + carry, min(min((size_t)availRaw, (size_t)SRVOTA_CHUNK), remaining));
+
+    // Langsame oder abreissende Verbindungen (z. B. ueber einen Router in ein anderes Netz):
+    // bei einem Abriss mit HTTP-Range am letzten Byte weitermachen statt neu anzufangen.
+    for (int attempt = 0; attempt < SRVOTA_MAX_ATTEMPTS && ok && written < size; attempt++) {
+        if (attempt > 0) {
+            Serial.printf("ServerOTA: resume at %u/%u (attempt %d)\n", (unsigned)written, (unsigned)size, attempt + 1);
+            vTaskDelay(pdMS_TO_TICKS(2000));
         }
-        if (n == 0) {
-            // Keine Daten: Verbindung pruefen und Frist zaehlen (auch wenn available() > 0 war, read() aber nichts lieferte).
-            if (!stream->connected()) { err = "connection lost"; ok = false; break; }
-            if (millis() - lastData > 15000) { err = "download timeout"; ok = false; break; }
-            vTaskDelay(pdMS_TO_TICKS(5));
+        if (WiFi.status() != WL_CONNECTED) { err = "WiFi lost"; continue; }
+
+        HTTPClient http;
+        prepareHttp(http, filamanUrl + path, 15000);
+        http.useHTTP10(true);  // kein Chunked-Encoding: Content-Length ist Pflicht
+        if (written > 0) http.addHeader("Range", "bytes=" + String((unsigned)written) + "-");
+        int code = http.GET();
+        int expect = written > 0 ? 206 : HTTP_CODE_OK;
+        if (code != expect) {
+            http.end();
+            err = "download HTTP " + String(code);
+            if (code > 0 && code != 206 && code != 200) ok = false;  // echte Serverantwort: kein Wiederholen
             continue;
         }
-        lastData = millis();
-        mbedtls_sha256_update(&sha, work + carry, n);
-        if (!markerSeen) markerSeen = containsNeedle(work, carry + n);
-        if (Update.write(work + carry, n) != n) { err = String("flash write: ") + Update.errorString(); ok = false; break; }
-        size_t total = carry + n;
-        carry = min(carryMax, total);
-        memmove(work, work + total - carry, carry);
-        remaining -= n;
+        int len = http.getSize();
+        if (len < 0 || (uint32_t)len != size - written) { http.end(); err = "content-length mismatch"; ok = false; break; }
 
-        int pct = (int)(((uint64_t)(size - remaining) * 100) / size);
-        if (pct != lastPct && pct % 2 == 0) { showProgress(pct); lastPct = pct; }
-        sinceYield += n;
-        if (sinceYield >= 8192) { sinceYield = 0; vTaskDelay(1); }
+        WiFiClient* stream = http.getStreamPtr();
+        uint32_t lastData = millis();
+        bool stalled = false;
+        while (written < size) {
+            if (WiFi.status() != WL_CONNECTED) { err = "WiFi lost"; stalled = true; break; }
+            if (millis() - downloadStart > SRVOTA_MAX_DOWNLOAD_MS) { err = "download took longer than 15 min"; ok = false; break; }
+            // available() liefert int; negative Werte (Fehler) duerfen nicht als riesige size_t durchrutschen.
+            int availRaw = stream->available();
+            int n = 0;
+            if (availRaw > 0) {
+                size_t want = min(min((size_t)availRaw, (size_t)SRVOTA_CHUNK), size - written);
+                n = stream->read(work + carry, want);
+            }
+            if (n <= 0) {
+                if (!stream->connected()) { err = "connection lost"; stalled = true; break; }
+                if (millis() - lastData > SRVOTA_STALL_MS) { err = "download timeout"; stalled = true; break; }
+                vTaskDelay(pdMS_TO_TICKS(5));
+                continue;
+            }
+            lastData = millis();
+            mbedtls_sha256_update(&sha, work + carry, n);
+            if (!markerSeen) markerSeen = containsNeedle(work, carry + n);
+            if (Update.write(work + carry, n) != (size_t)n) { err = String("flash write: ") + Update.errorString(); ok = false; break; }
+            size_t total = carry + n;
+            carry = min(carryMax, total);
+            memmove(work, work + total - carry, carry);
+            written += n;
+
+            int pct = (int)(((uint64_t)written * 100) / size);
+            if (pct != lastPct && pct % 2 == 0) { showProgress(pct); lastPct = pct; }
+            if (pct >= lastLogPct + 10) {
+                Serial.printf("ServerOTA: %d%% (%u bytes, %lus)\n", pct, (unsigned)written, (unsigned long)((millis() - downloadStart) / 1000));
+                lastLogPct = pct;
+            }
+            sinceYield += n;
+            if (sinceYield >= 8192) { sinceYield = 0; vTaskDelay(1); }
+        }
+        http.end();
+        if (!stalled) break;  // fertig oder harter Fehler
     }
-    http.end();
+    if (ok && written < size) ok = false;  // alle Versuche aufgebraucht, err steht schon
     free(work);
 
     uint8_t digest[32];
