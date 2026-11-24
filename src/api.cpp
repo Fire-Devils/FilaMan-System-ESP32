@@ -117,7 +117,16 @@ bool sendHeartbeat() {
     serializeJson(doc, payload);
     int httpCode = http.POST(payload);
     filamanConnected = (httpCode == 200);
-    if (httpCode >= 200 && httpCode < 300) serverOtaConfirm();
+    if (httpCode >= 200 && httpCode < 300) {
+        serverOtaConfirm();
+        // Antwort kann {"firmware_update":"<version>"} enthalten: Server hat andere Firmware bereit.
+        String body = http.getString();
+        JsonDocument resp;
+        if (!deserializeJson(resp, body)) {
+            const char* fw = resp["firmware_update"] | "";
+            if (fw[0] != '\0') serverOtaUpdateHint(fw);
+        }
+    }
     http.end();
     return filamanConnected;
 }

@@ -21,6 +21,10 @@ void serverOtaStart();
 // Wird aufgerufen, sobald der Server mit 2xx geantwortet hat (bestaetigt eine neue Firmware).
 void serverOtaConfirm();
 
+// Update-Hinweis aus der Heartbeat-Antwort (firmware_update): loest bald eine sofortige
+// Pruefung aus. Thread-sicher, darf aus dem FilaManApi-Task aufgerufen werden.
+void serverOtaUpdateHint(const char* version);
+
 // true, solange ein Server-Update heruntergeladen/geschrieben wird.
 bool serverOtaInProgress();
 

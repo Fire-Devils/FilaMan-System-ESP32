@@ -35,6 +35,7 @@ static const size_t NEEDLE_LEN = sizeof(PROJECT_NEEDLE) - 1;
 #define SRVOTA_INTERVAL_MS      (6UL * 3600UL * 1000UL)
 #define SRVOTA_JITTER_MS        (30UL * 60UL * 1000UL)
 #define SRVOTA_BUSY_RETRY_MS    60000UL
+#define SRVOTA_HINT_MIN_INTERVAL_MS 1800000UL  // gleiche Hinweis-Version hoechstens alle 30 min erneut pruefen
 #define SRVOTA_FAIL_RETRY_MS    60000UL    // schneller neuer Versuch nach fehlgeschlagenem Download
 #define SRVOTA_FAIL_RETRIES     3          // so viele schnelle Wiederholungen hintereinander, dann normales Intervall
 #define SRVOTA_CONFIRM_MS       300000UL   // Frist bis zur Server-Bestaetigung nach einem Update
@@ -456,6 +457,23 @@ static bool reportRollbackIfNeeded() {
     return true;
 }
 
+// Update-Hinweis aus dem Heartbeat (kommt aus dem FilaManApi-Task, wird im ServerOta-Task gelesen).
+static portMUX_TYPE hintMux = portMUX_INITIALIZER_UNLOCKED;
+static char hintVersion[33] = "";
+static bool hintPending = false;
+
+void serverOtaUpdateHint(const char* version) {
+    if (!version) return;
+    size_t len = strlen(version);
+    if (len == 0 || len > 32) return;
+    String v(version);
+    if (!versionIsSane(v) || v == VERSION) return;
+    portENTER_CRITICAL(&hintMux);
+    memcpy(hintVersion, version, len + 1);
+    hintPending = true;
+    portEXIT_CRITICAL(&hintMux);
+}
+
 static void serverOtaTask(void*) {
     bool scheduled = false;
     uint32_t nextCheckAt = 0;
@@ -466,6 +484,21 @@ static void serverOtaTask(void*) {
     // Abstuerze faengt weiterhin der Boot-Zaehler ab.
     uint32_t pendingOnlineMs = 0;
     int failRetries = 0;
+    char lastHintVersion[33] = "";   // zuletzt per Hinweis geprueft
+    uint32_t lastHintCheckAt = 0;
+    bool haveHintCheck = false;
+
+    // Gemeinsamer Pfad fuer geplante und per Hinweis ausgeloeste Pruefung.
+    auto runCheck = [&]() {
+        bool installFailed = checkForUpdate();  // bei Erfolg Neustart; sonst naechster Termin
+        if (installFailed && failRetries < SRVOTA_FAIL_RETRIES) {
+            failRetries++;
+            nextCheckAt = millis() + SRVOTA_FAIL_RETRY_MS;
+        } else {
+            failRetries = 0;
+            nextCheckAt = millis() + SRVOTA_INTERVAL_MS + (esp_random() % SRVOTA_JITTER_MS);
+        }
+    };
 
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -496,6 +529,7 @@ static void serverOtaTask(void*) {
             nextRbReportAt = now + 60000UL;
         }
 
+        bool checked = false;
         if (!scheduled) {
             nextCheckAt = now + SRVOTA_FIRST_CHECK_MS + (esp_random() % SRVOTA_FIRST_JITTER_MS);
             scheduled = true;
@@ -503,13 +537,31 @@ static void serverOtaTask(void*) {
             if (otaBusy()) {
                 nextCheckAt = now + SRVOTA_BUSY_RETRY_MS;
             } else {
-                bool installFailed = checkForUpdate();  // bei Erfolg Neustart; sonst naechster Termin
-                if (installFailed && failRetries < SRVOTA_FAIL_RETRIES) {
-                    failRetries++;
-                    nextCheckAt = millis() + SRVOTA_FAIL_RETRY_MS;
-                } else {
-                    failRetries = 0;
-                    nextCheckAt = millis() + SRVOTA_INTERVAL_MS + (esp_random() % SRVOTA_JITTER_MS);
+                runCheck();
+                checked = true;
+            }
+        }
+
+        // Update-Hinweis vom Server: sofort pruefen (auch vor Ablauf der Startfrist), gedrosselt.
+        if (!checked && !otaBusy()) {
+            char hv[33];
+            bool have = false;
+            portENTER_CRITICAL(&hintMux);
+            if (hintPending) {
+                memcpy(hv, hintVersion, sizeof(hv));
+                hintPending = false;
+                have = true;
+            }
+            portEXIT_CRITICAL(&hintMux);
+            if (have) {
+                uint32_t t = millis();
+                bool newVersion = !haveHintCheck || strcmp(hv, lastHintVersion) != 0;
+                if (newVersion || (uint32_t)(t - lastHintCheckAt) >= SRVOTA_HINT_MIN_INTERVAL_MS) {
+                    memcpy(lastHintVersion, hv, sizeof(lastHintVersion));
+                    lastHintCheckAt = t;
+                    haveHintCheck = true;
+                    Serial.printf("ServerOTA: update hint %s, checking now\n", hv);
+                    runCheck();
                 }
             }
         }
