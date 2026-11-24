@@ -2,7 +2,6 @@
 #include "server_ota.h"
 #include <HTTPClient.h>
 #include <WiFi.h>
-#include <Update.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <esp_ota_ops.h>
@@ -29,11 +28,15 @@ static const char PROJECT_NEEDLE[] = "FMFWINFO1:project=" FW_PROJECT ";";
 static const size_t NEEDLE_LEN = sizeof(PROJECT_NEEDLE) - 1;
 
 #define SRVOTA_NS               "srvota"
-#define SRVOTA_FIRST_CHECK_MS   30000UL
+// Erst nach 3 Minuten: kurz nach dem WLAN-Connect fallen in manchen Netzen (IoT-AP, Routing)
+// Verbindungen fuer bis zu 1,5 Minuten aus.
+#define SRVOTA_FIRST_CHECK_MS   180000UL
 #define SRVOTA_FIRST_JITTER_MS  30000UL
 #define SRVOTA_INTERVAL_MS      (6UL * 3600UL * 1000UL)
 #define SRVOTA_JITTER_MS        (30UL * 60UL * 1000UL)
 #define SRVOTA_BUSY_RETRY_MS    60000UL
+#define SRVOTA_FAIL_RETRY_MS    60000UL    // schneller neuer Versuch nach fehlgeschlagenem Download
+#define SRVOTA_FAIL_RETRIES     3          // so viele schnelle Wiederholungen hintereinander, dann normales Intervall
 #define SRVOTA_CONFIRM_MS       300000UL   // Frist bis zur Server-Bestaetigung nach einem Update
 #define SRVOTA_MAX_BOOTS        3
 #define SRVOTA_CHUNK            4096
@@ -225,20 +228,23 @@ static void releaseTasks() {
 }
 
 // Laedt und installiert die Firmware. Kehrt nur bei Fehler zurueck (bei Erfolg Neustart).
-static void installFirmware(const String& newVersion, uint32_t size, const String& sha256, const String& path) {
+// Rueckgabe true = begonnener Installationsversuch ist fehlgeschlagen (-> schneller neuer Versuch).
+static bool installFirmware(const String& newVersion, uint32_t size, const String& sha256, const String& path) {
     String from = VERSION;
     String err;
+    esp_ota_handle_t otaHandle = 0;
+    bool otaBegun = false, otaEnded = false;
     auto fail = [&](const String& msg) {
         Serial.printf("ServerOTA: FAILED: %s\n", msg.c_str());
-        if (Update.isRunning()) Update.abort();
+        if (otaBegun && !otaEnded) esp_ota_abort(otaHandle);  // nach esp_ota_end ist das Handle ungueltig
         releaseTasks();
         otaRunning = false;
         sendOtaReport(from, newVersion, "failed", msg);
     };
 
     const esp_partition_t* target = esp_ota_get_next_update_partition(NULL);
-    if (!target) { fail("no OTA partition"); return; }
-    if (size == 0 || size > target->size) { fail("image size invalid for partition"); return; }
+    if (!target) { fail("no OTA partition"); return false; }
+    if (size == 0 || size > target->size) { fail("image size invalid for partition"); return false; }
 
     otaRunning = true;
     sendOtaReport(from, newVersion, "started", "");
@@ -250,11 +256,17 @@ static void installFirmware(const String& newVersion, uint32_t size, const Strin
     vTaskDelay(pdMS_TO_TICKS(300));
     showProgress(0);
 
-    if (!Update.begin(size, U_FLASH)) { fail(String("Update.begin: ") + Update.errorString()); return; }
+    // esp_ota_begin loescht den ganzen Bereich vorab (einige Sekunden), damit waehrend des
+    // Downloads kein Flash-Erase den WLAN-Empfang blockiert. Muss vor der HTTP-Verbindung passieren.
+    const uint32_t eraseStart = millis();
+    esp_err_t oerr = esp_ota_begin(target, size, &otaHandle);
+    if (oerr != ESP_OK) { fail(String("esp_ota_begin: ") + esp_err_to_name(oerr)); return true; }
+    otaBegun = true;
+    Serial.printf("ServerOTA: erase %u bytes took %lu ms\n", (unsigned)size, (unsigned long)(millis() - eraseStart));
 
     const size_t carryMax = NEEDLE_LEN - 1;
     uint8_t* work = (uint8_t*)malloc(carryMax + SRVOTA_CHUNK);
-    if (!work) { fail("out of memory"); return; }
+    if (!work) { fail("out of memory"); return true; }
 
     mbedtls_sha256_context sha;
     mbedtls_sha256_init(&sha);
@@ -265,7 +277,6 @@ static void installFirmware(const String& newVersion, uint32_t size, const Strin
     bool markerSeen = false;
     bool ok = true;
     const uint32_t downloadStart = millis();
-
     // Langsame oder abreissende Verbindungen (z. B. ueber einen Router in ein anderes Netz):
     // bei einem Abriss mit HTTP-Range am letzten Byte weitermachen statt neu anzufangen.
     for (int attempt = 0; attempt < SRVOTA_MAX_ATTEMPTS && ok && written < size; attempt++) {
@@ -284,6 +295,7 @@ static void installFirmware(const String& newVersion, uint32_t size, const Strin
         if (code != expect) {
             http.end();
             err = "download HTTP " + String(code);
+            Serial.printf("ServerOTA: GET failed %d (%s)\n", code, HTTPClient::errorToString(code).c_str());
             if (code > 0 && code != 206 && code != 200) ok = false;  // echte Serverantwort: kein Wiederholen
             continue;
         }
@@ -312,7 +324,8 @@ static void installFirmware(const String& newVersion, uint32_t size, const Strin
             lastData = millis();
             mbedtls_sha256_update(&sha, work + carry, n);
             if (!markerSeen) markerSeen = containsNeedle(work, carry + n);
-            if (Update.write(work + carry, n) != (size_t)n) { err = String("flash write: ") + Update.errorString(); ok = false; break; }
+            oerr = esp_ota_write(otaHandle, work + carry, n);
+            if (oerr != ESP_OK) { err = String("flash write: ") + esp_err_to_name(oerr); ok = false; break; }
             size_t total = carry + n;
             carry = min(carryMax, total);
             memmove(work, work + total - carry, carry);
@@ -328,6 +341,10 @@ static void installFirmware(const String& newVersion, uint32_t size, const Strin
             if (sinceYield >= 8192) { sinceYield = 0; vTaskDelay(1); }
         }
         http.end();
+        if (stalled) {
+            Serial.printf("ServerOTA: stall (%s) at %u/%u, %lus, RSSI %d\n", err.c_str(), (unsigned)written, (unsigned)size,
+                          (unsigned long)((millis() - downloadStart) / 1000), (int)WiFi.RSSI());
+        }
         if (!stalled) break;  // fertig oder harter Fehler
     }
     if (ok && written < size) ok = false;  // alle Versuche aufgebraucht, err steht schon
@@ -337,14 +354,22 @@ static void installFirmware(const String& newVersion, uint32_t size, const Strin
     mbedtls_sha256_finish(&sha, digest);
     mbedtls_sha256_free(&sha);
 
-    if (!ok) { fail(err); return; }
+    if (!ok) { fail(err); return true; }
 
     char hex[65];
     for (int i = 0; i < 32; i++) sprintf(hex + i * 2, "%02x", digest[i]);
     String got = String(hex);
     String want = sha256; want.toLowerCase();
-    if (got != want) { fail("SHA-256 mismatch"); return; }
-    if (!markerSeen) { fail("image is not for this project (" FW_PROJECT ")"); return; }
+    if (got != want) { fail("SHA-256 mismatch"); return true; }
+    if (!markerSeen) { fail("image is not for this project (" FW_PROJECT ")"); return true; }
+
+    // esp_ota_end prueft das Image; danach ist das Handle ungueltig (auch bei Fehler).
+    otaEnded = true;
+    oerr = esp_ota_end(otaHandle);
+    if (oerr != ESP_OK) { fail(String("esp_ota_end: ") + esp_err_to_name(oerr)); return true; }
+
+    // Image aus der Zielpartition nochmals pruefen (Boot-Partition ist noch nicht gesetzt).
+    if (!partitionHasProject(target, size)) { fail("project marker missing in written image"); return true; }
 
     // pending VOR dem Aktivieren setzen: bricht der Strom danach ab, greift trotzdem der Rollback.
     {
@@ -358,18 +383,11 @@ static void installFirmware(const String& newVersion, uint32_t size, const Strin
             p.end();
         }
     }
-    if (!Update.end(true)) {
+    oerr = esp_ota_set_boot_partition(target);
+    if (oerr != ESP_OK) {
         clearPendingNvs();
-        fail(String("Update.end: ") + Update.errorString());
-        return;
-    }
-
-    // Image aus der Zielpartition nochmals pruefen (Update.end hat die Boot-Partition schon gesetzt).
-    if (!partitionHasProject(target, size)) {
-        esp_ota_set_boot_partition(esp_ota_get_running_partition());
-        clearPendingNvs();
-        fail("project marker missing in written image");
-        return;
+        fail(String("esp_ota_set_boot_partition: ") + esp_err_to_name(oerr));
+        return true;
     }
 
     showProgress(100);
@@ -377,44 +395,47 @@ static void installFirmware(const String& newVersion, uint32_t size, const Strin
     sendOtaReport(from, newVersion, "ok", "");
     vTaskDelay(pdMS_TO_TICKS(1000));
     ESP.restart();
+    return false;
 }
 
-static void checkForUpdate() {
+// Rueckgabe true = schneller neuer Versuch sinnvoll: Installationsversuch fehlgeschlagen oder
+// Server nicht erreichbar (Netzfehler). Nicht bei: up to date, 404, Manifestfehler.
+static bool checkForUpdate() {
     String url = filamanUrl + "/api/v1/devices/firmware/latest?project=" FW_PROJECT;
     HTTPClient http;
     prepareHttp(http, url, 10000);
     int code = http.GET();
-    if (code == 404) { http.end(); Serial.println("ServerOTA: no firmware available"); return; }
-    if (code < 200 || code >= 300) { http.end(); Serial.printf("ServerOTA: manifest HTTP %d\n", code); return; }
+    if (code == 404) { http.end(); Serial.println("ServerOTA: no firmware available"); return false; }
+    if (code < 200 || code >= 300) { http.end(); Serial.printf("ServerOTA: manifest HTTP %d\n", code); return code < 0; }
     serverOtaConfirm();
     String body = http.getString();
     http.end();
 
     JsonDocument doc;
-    if (deserializeJson(doc, body)) { Serial.println("ServerOTA: manifest parse error"); return; }
+    if (deserializeJson(doc, body)) { Serial.println("ServerOTA: manifest parse error"); return false; }
     String project = doc["project"] | "";
     String version = doc["version"] | "";
     String sha = doc["sha256"] | "";
     String path = doc["url"] | "";
     uint32_t size = doc["size"] | 0;
 
-    if (project != FW_PROJECT) { Serial.println("ServerOTA: project mismatch, abort"); return; }
-    if (!versionIsSane(version)) { Serial.println("ServerOTA: bad version string"); return; }
-    if (version == VERSION) { Serial.println("ServerOTA: up to date"); return; }
-    if (sha.length() != 64) { Serial.println("ServerOTA: bad sha256"); return; }
-    if (!urlIsSafe(path)) { Serial.println("ServerOTA: unsafe download url"); return; }
-    if (size == 0) { Serial.println("ServerOTA: bad size"); return; }
+    if (project != FW_PROJECT) { Serial.println("ServerOTA: project mismatch, abort"); return false; }
+    if (!versionIsSane(version)) { Serial.println("ServerOTA: bad version string"); return false; }
+    if (version == VERSION) { Serial.println("ServerOTA: up to date"); return false; }
+    if (sha.length() != 64) { Serial.println("ServerOTA: bad sha256"); return false; }
+    if (!urlIsSafe(path)) { Serial.println("ServerOTA: unsafe download url"); return false; }
+    if (size == 0) { Serial.println("ServerOTA: bad size"); return false; }
 
     Preferences p;
     if (p.begin(SRVOTA_NS, true)) {
         String bad = p.getString("bad", "");
         p.end();
-        if (bad == version) { Serial.println("ServerOTA: version was rolled back before, skipping"); return; }
+        if (bad == version) { Serial.println("ServerOTA: version was rolled back before, skipping"); return false; }
     }
-    if (otaPending) { Serial.println("ServerOTA: previous update unconfirmed, skipping"); return; }
+    if (otaPending) { Serial.println("ServerOTA: previous update unconfirmed, skipping"); return false; }
 
     Serial.printf("ServerOTA: update %s -> %s (%u bytes)\n", VERSION, version.c_str(), (unsigned)size);
-    installFirmware(version, size, sha, path);
+    return installFirmware(version, size, sha, path);
 }
 
 // Einmaliger Bericht nach einem Rollback (laeuft in der alten Firmware).
@@ -444,6 +465,7 @@ static void serverOtaTask(void*) {
     // haengt setup() im WiFi-Portal, soll das nicht zu einem grundlosen Rollback fuehren.
     // Abstuerze faengt weiterhin der Boot-Zaehler ab.
     uint32_t pendingOnlineMs = 0;
+    int failRetries = 0;
 
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -481,8 +503,14 @@ static void serverOtaTask(void*) {
             if (otaBusy()) {
                 nextCheckAt = now + SRVOTA_BUSY_RETRY_MS;
             } else {
-                checkForUpdate();  // bei Erfolg Neustart; sonst naechster Termin
-                nextCheckAt = millis() + SRVOTA_INTERVAL_MS + (esp_random() % SRVOTA_JITTER_MS);
+                bool installFailed = checkForUpdate();  // bei Erfolg Neustart; sonst naechster Termin
+                if (installFailed && failRetries < SRVOTA_FAIL_RETRIES) {
+                    failRetries++;
+                    nextCheckAt = millis() + SRVOTA_FAIL_RETRY_MS;
+                } else {
+                    failRetries = 0;
+                    nextCheckAt = millis() + SRVOTA_INTERVAL_MS + (esp_random() % SRVOTA_JITTER_MS);
+                }
             }
         }
     }
