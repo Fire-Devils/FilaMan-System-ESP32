@@ -16,6 +16,7 @@
 #define NVS_KEY_LANGUAGE                    "language"
 #define NVS_KEY_OLED_SLEEP                  "oled_sleep"
 #define NVS_KEY_WIFI_TXPOWER                "wifi_txpwr"
+#define NVS_KEY_NFC_STABLE_ONLY             "nfc_stable"
 #define SCALE_DEFAULT_CALIBRATION_VALUE     430.0f;
 
 #define OLED_RESET                          -1      // Reset pin # (or -1 if sharing Arduino reset pin)

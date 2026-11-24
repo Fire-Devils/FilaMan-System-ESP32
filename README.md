@@ -39,7 +39,7 @@ More information and products can be found here: [www.recyclingfabrik.com](https
 
 ### ESP32 Hardware Features
 - **Weight Measurement:** Using a load cell with HX711 amplifier for precise weight tracking.
-- **NFC Tag Reading/Writing:** PN532 module for reading and writing filament data to NFC tags.
+- **NFC Tag Reading/Writing:** PN532 module for reading and writing filament data to NFC tags. Optional setting "Read NFC only when the weight is stable" (web UI > Setup, off by default) reduces weight jitter caused by the NFC radio field.
 - **OLED Display:** Shows current weight and connection status (WiFi, FilaMan-System).
 - **WiFi Connectivity:** WiFiManager for easy network configuration.
 - **NFC-Tag NTAG213 NTAG215:** Use NTAG213, better NTAG215 because of enough space on the Tag
@@ -147,7 +147,7 @@ A+ green*
 - `WiFiManager`: Network configuration
 - `ESPAsyncWebServer`: Web server functionality
 - `ArduinoJson`: JSON parsing and creation
-- `Adafruit_PN532`: NFC functionality
+- `Adafruit_PN532`: NFC functionality (copy in `lib/` with an added `disableRFField()` method)
 - `Adafruit_SSD1306`: OLED display control
 - `HX711`: Load cell communication
 

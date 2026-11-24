@@ -19,6 +19,7 @@ int16_t weight = 0;
 #define MOVING_AVERAGE_SIZE 8           // Reduced from 20 to 8 for faster response
 #define LOW_PASS_ALPHA 0.3f            // Increased from 0.15 to 0.3 for faster tracking
 #define DISPLAY_HYSTERESIS 0.6f        // Float-Hysterese gegen Flackern an .5-g-Grenzen
+#define DISPLAY_HYSTERESIS_NFC_GATE 1.0f // mit "NFC nur bei stabilem Gewicht": etwas groesser, da Restrauschen nach dem Funkfeld-Aus
 #define MEASUREMENT_INTERVAL_MS 30     // Reduced from 50ms to 30ms for faster updates
 #define HX711_MAX_RAW 8388607L         // 0x7FFFFF (gesaettigt)
 #define HX711_MIN_RAW (-8388608L)      // -0x800000 (gesaettigt)
@@ -195,7 +196,7 @@ int16_t processWeightReading(float rawWeight) {
   float smoothedWeight = applyLowPassFilter(avgWeight);
 
   // Gerundeter Wert, aber nur mit Hysterese aendern
-  if (fabsf(smoothedWeight - (float)lastDisplayedWeight) >= DISPLAY_HYSTERESIS) {
+  if (fabsf(smoothedWeight - (float)lastDisplayedWeight) >= (nfcStableOnly ? DISPLAY_HYSTERESIS_NFC_GATE : DISPLAY_HYSTERESIS)) {
     lastDisplayedWeight = (int16_t)lroundf(smoothedWeight);
   }
 
@@ -207,6 +208,68 @@ int16_t processWeightReading(float rawWeight) {
  */
 int16_t getFilteredDisplayWeight() {
   return lastDisplayedWeight;
+}
+
+
+// ##### NFC-Gate: NFC nur nach stabiler Waegung #####
+// Messung zeigte: PN532-Polling erzeugt ~10 g Rauschen auf der Waage. Das Gate haelt den NFC-Task
+// an, solange die Waage misst, und oeffnet ihn nur kurz, wenn das Gewicht stabil ist.
+#define NFC_GATE_STABLE_MS        1500   // Anzeigewert so lange unveraendert -> stabil
+#define NFC_GATE_WINDOW_MS        2000   // NFC-Fenster (SAMConfig + Pollen)
+#define NFC_GATE_QUIET_IDLE_MS    8000   // Pause bis zum naechsten Fenster ohne Tag
+#define NFC_GATE_QUIET_PRESENT_MS 15000  // Pause, wenn schon ein Tag gelesen wurde (Entfernen erkennen)
+#define NFC_GATE_RELEASE_DELTA_G  5      // Gewichtsaenderung, die die Pause vorzeitig beendet
+#define NFC_GATE_SETTLE_MS        400    // nach dem Funkfeld-Aus noch so lange Messwerte verwerfen (Messung: Ausschlag bis ~0,5 s danach)
+static unsigned long gateLastChange = 0, gateOpenedAt = 0, gateQuietUntil = 0, gateClosedAt = 0;
+static int16_t gateLastShown = 0, gateRefWeight = 0;
+
+// true, solange NFC pollt (oder gerade aufgehoert hat): Messwerte nicht in den Filter geben, nicht tarieren
+static bool nfcNoisePhase() {
+  if (!nfcStableOnly) return false;  // Einstellung aus: Verhalten wie bisher
+  // erst wenn das Funkfeld tatsaechlich aus ist (Abschalten passiert im NFC-Task, bis ~2 s nach dem Schliessen), dann Einschwingzeit
+  return !nfcGateClosed || !nfcRfFieldOff || (millis() - nfcRfFieldOffAt) < NFC_GATE_SETTLE_MS;
+}
+
+static void updateNfcGate() {
+  if (!nfcStableOnly) {
+    // Einstellung aus (Standard): Gate dauerhaft offen. Wurde sie gerade ausgeschaltet, oeffnet der NFC-Task das Funkfeld wieder.
+    nfcGateClosed = false;
+    nfcRescanRequest = false;
+    return;
+  }
+  unsigned long now = millis();
+  if (lastDisplayedWeight != gateLastShown) {
+    gateLastShown = lastDisplayedWeight;
+    gateLastChange = now;
+  }
+  if (abs(lastDisplayedWeight - gateRefWeight) >= NFC_GATE_RELEASE_DELTA_G) {
+    gateQuietUntil = 0;  // Spule aufgelegt/entfernt: bald wieder NFC erlauben
+    if (nfcReaderState != NFC_IDLE) nfcRescanRequest = true;  // Tag war schon verarbeitet: beim naechsten Fenster neu lesen
+  }
+
+  // Nur aktive Vorgaenge halten das Gate offen. Ergebnis-Zustaende (READ_SUCCESS, WRITE_SUCCESS, *_ERROR, BAMBU_*)
+  // bleiben bestehen, solange der Tag auf dem Leser liegt (Messung nach Tag-Schreiben: Gate blieb dauerhaft offen).
+  bool busy = nfcWriteInProgress || scanRequestActive ||
+              nfcReaderState == NFC_READING || nfcReaderState == NFC_WRITING;
+  if (busy) {
+    if (nfcGateClosed) {
+      nfcGateClosed = false;
+      gateOpenedAt = now;
+    }
+    return;
+  }
+
+  if (nfcGateClosed) {
+    if (now - gateLastChange >= NFC_GATE_STABLE_MS && now >= gateQuietUntil) {
+      nfcGateClosed = false;
+      gateOpenedAt = now;
+    }
+  } else if (now - gateOpenedAt >= NFC_GATE_WINDOW_MS) {
+    nfcGateClosed = true;
+    gateClosedAt = now;
+    gateRefWeight = lastDisplayedWeight;
+    gateQuietUntil = now + (nfcReaderState != NFC_IDLE ? NFC_GATE_QUIET_PRESENT_MS : NFC_GATE_QUIET_IDLE_MS);
+  }
 }
 
 // ##### Funktionen für Waage #####
@@ -260,7 +323,7 @@ void scale_loop(void * parameter) {
       if (scale.is_ready())
       {
         // Waage manuell Taren
-        if (scaleTareRequest == true || (autoTare && scale_tare_counter >= 20))
+        if ((scaleTareRequest == true || (autoTare && scale_tare_counter >= 20)) && !nfcNoisePhase())
         {
           Serial.println("Re-Tare scale");
           oledDisplayText(tr(STR_TARE_SCALE));
@@ -291,6 +354,8 @@ void scale_loop(void * parameter) {
           if (settleDiscard > 0) {
             // Einschwingzeit nach Recovery
             settleDiscard--;
+          } else if (nfcNoisePhase()) {
+            // NFC-Fenster: Messwert verwerfen, Filter und Anzeige bleiben stehen
           } else {
             float rawWeight = (float)(raw - scale.get_offset()) / scale.get_scale();
 
@@ -334,6 +399,8 @@ void scale_loop(void * parameter) {
         settleDiscard = SCALE_SETTLE_SAMPLES;
       }
     }
+
+    updateNfcGate();
 
     vTaskDelay(pdMS_TO_TICKS(10)); // Shorter delay for more responsive loop
   }

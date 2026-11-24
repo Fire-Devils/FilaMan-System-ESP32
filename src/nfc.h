@@ -24,6 +24,8 @@ struct NfcWriteParameterType {
 };
 
 void startNfc();
+void loadNfcStableOnly();
+void saveNfcStableOnly(bool enabled);
 void scanRfidTask(void * parameter);
 void startWriteJsonToTag(const bool isSpoolTag, const char* payload, int spoolId = 0, int locationId = 0);
 void setScanRequest(bool active);
@@ -39,6 +41,11 @@ extern volatile bool scanRequestActive;
 extern volatile bool tagProcessed;
 extern volatile bool isBambuTag;
 extern volatile bool nfcReadingTaskSuspendRequest; // Reader-Task per Flag anhalten (statt vTaskSuspend)
+extern volatile bool nfcStableOnly;                // Einstellung "NFC nur bei stabilem Gewicht" (Standard: false)
+extern volatile bool nfcRfFieldOff;                 // true = PN532-Funkfeld aus (Gate zu)
+extern volatile unsigned long nfcRfFieldOffAt;
+extern volatile bool nfcRescanRequest;              // Gewichtsaenderung nach gelesenem Tag: Tag-Zustand zuruecksetzen
+extern volatile bool nfcGateClosed;                 // true = NFC-Polling pausiert, Waage misst
 extern volatile bool nfcReadingTaskSuspendState;   // true = Reader-Task pausiert
 
 #endif
