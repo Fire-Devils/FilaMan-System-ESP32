@@ -89,6 +89,18 @@
             </div>
 
             <div class="fm-card">
+                <h2>NFC Settings</h2>
+
+                <div class="fm-form-group" style="margin-top: 1rem;">
+                    <label class="fm-label" for="nfcStableOnly">
+                        <input type="checkbox" id="nfcStableOnly"> Read NFC only when the weight is stable
+                    </label>
+                    <p style="font-size: 0.8rem; margin-top: 0.5rem;">Off by default. The NFC reader's radio field can disturb the scale (weight jitter of several grams). When enabled, the reader only polls in short windows while the weight is stable and is switched off otherwise. A tag can then take up to about 10 seconds to be detected. Applies immediately, no restart needed.</p>
+                </div>
+                <div id="nfcStableStatusMessage" style="margin-top: 0.5rem;"></div>
+            </div>
+
+            <div class="fm-card">
                 <h2>WiFi Settings</h2>
 
                 <div class="fm-form-group" style="margin-top: 1rem;">
@@ -175,6 +187,37 @@
                 msg.textContent = 'Error saving setting.';
                 msg.style.color = 'var(--error-text)';
                 console.error('Error saving display settings:', error);
+            });
+        });
+
+        // NFC only when weight is stable
+        fetch('/api/nfc-gate')
+            .then(response => response.json())
+            .then(data => { document.getElementById('nfcStableOnly').checked = !!data.enabled; })
+            .catch(error => console.error('Error fetching NFC setting:', error));
+
+        document.getElementById('nfcStableOnly').addEventListener('change', function() {
+            const msg = document.getElementById('nfcStableStatusMessage');
+            fetch('/api/nfc-gate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: this.checked })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    msg.textContent = 'Saved.';
+                    msg.style.color = 'var(--success-text)';
+                    setTimeout(() => { msg.textContent = ''; }, 2000);
+                } else {
+                    msg.textContent = 'Error saving setting.';
+                    msg.style.color = 'var(--error-text)';
+                }
+            })
+            .catch(error => {
+                msg.textContent = 'Error saving setting.';
+                msg.style.color = 'var(--error-text)';
+                console.error('Error saving NFC setting:', error);
             });
         });
 

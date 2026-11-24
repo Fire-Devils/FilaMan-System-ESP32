@@ -39,7 +39,7 @@ Weitere Informationen und Produkte finden Sie hier: [www.recyclingfabrik.com](ht
 
 ### ESP32 Hardware-Features
 - **Gewichtsmessung:** Verwendung einer Wägezelle mit HX711-Verstärker für präzises Gewichts-Tracking.
-- **NFC-Tag Lesen/Schreiben:** PN532-Modul zum Lesen und Schreiben von Filamentdaten auf NFC-Tags.
+- **NFC-Tag Lesen/Schreiben:** PN532-Modul zum Lesen und Schreiben von Filamentdaten auf NFC-Tags. Optionale Einstellung "NFC nur bei stabilem Gewicht" (Weboberfläche > Setup, standardmäßig aus) verringert Gewichtsschwankungen durch das NFC-Funkfeld.
 - **OLED-Display:** Zeigt aktuelles Gewicht und Verbindungsstatus (WiFi, FilaMan-System) an.
 - **WiFi-Konnektivität:** WiFiManager für einfache Netzwerkkonfiguration.
 - **NFC-Tag NTAG213 NTAG215:** Verwendung von NTAG213, besser NTAG215 wegen ausreichendem Platz auf dem Tag.
@@ -147,7 +147,7 @@ A+ grün*
 - `WiFiManager`: Netzwerkkonfiguration
 - `ESPAsyncWebServer`: Webserver-Funktionalität
 - `ArduinoJson`: JSON-Parsing und -Erstellung
-- `Adafruit_PN532`: NFC-Funktionalität
+- `Adafruit_PN532`: NFC-Funktionalität (Kopie in `lib/` mit ergänzter Methode `disableRFField()`)
 - `Adafruit_SSD1306`: OLED-Display-Steuerung
 - `HX711`: Kommunikation mit der Wägezelle
 

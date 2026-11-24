@@ -1,5 +1,6 @@
 #include "nfc.h"
 #include <Arduino.h>
+#include <Preferences.h>
 #include <Adafruit_PN532.h>
 #include <ArduinoJson.h>
 #include "config.h"
@@ -36,6 +37,11 @@ volatile bool tagProcessed = false;
 volatile bool isBambuTag = false;
 volatile bool nfcReadingTaskSuspendRequest = false;
 volatile bool nfcReadingTaskSuspendState = false;
+volatile bool nfcStableOnly = false;        // Einstellung "NFC nur bei stabilem Gewicht" (Standard aus), siehe updateNfcGate in scale.cpp
+volatile bool nfcRfFieldOff = false;         // true = PN532-Funkfeld per RFConfiguration abgeschaltet (Gate zu). Sonst bleibt es nach dem Pollen an und verschiebt die Waage um ~180 g
+volatile unsigned long nfcRfFieldOffAt = 0;  // millis() des Abschaltens, fuer die Sperrzeit der Waage
+volatile bool nfcRescanRequest = false;  // vom Gate gesetzt: Gewicht hat sich seit dem letzten Lesen geaendert (Spule weg/gewechselt), Tag-Zustand beim naechsten Fenster zuruecksetzen
+volatile bool nfcGateClosed = false; // true = Waage misst: NFC-Polling pausiert (siehe updateNfcGate in scale.cpp)
 volatile bool nfcWriteInProgress = false; // Prevent any tag operations during write
 volatile bool scanRequestActive = false;  // Set by website when frontend requests a tag scan
 unsigned long scanRequestStartedAtMs = 0;
@@ -1584,8 +1590,30 @@ void scanRfidTask(void * parameter) {
       sendScanRequestErrorToBackend("Timeout - no tag found");
     }
 
+    // Gate wieder offen: PN532 neu konfigurieren, danach schaltet das Pollen das Funkfeld wieder ein
+    if (nfcRfFieldOff && !nfcGateClosed) {
+      nfc.SAMConfig();   // bekannte Folge aus safeTagDetection; InListPassiveTarget schaltet das Feld selbst wieder an
+      nfcRfFieldOff = false;
+      Serial.println("NFC: Gate offen, SAMConfig");
+      // Ohne Dauerpolling faellt beim direkten Spulenwechsel keine Abfrage ohne Tag an: Zustand wie nach "Tag removed" zuruecksetzen, damit der neue Tag gelesen wird
+      if (nfcRescanRequest) {
+        nfcRescanRequest = false;
+        if (nfcReaderState != NFC_IDLE && nfcReaderState != NFC_READING && nfcReaderState != NFC_WRITING && !nfcWriteInProgress) {
+          Serial.printf("NFC: Gewichtsaenderung, Tag-Zustand zurueckgesetzt (Previous state: %d)\n", nfcReaderState);
+          nfcReaderState = NFC_IDLE;
+          nfcJsonData = "";
+          activeSpoolId = "";
+          activeTagUuid = "";
+          tagProcessed = false;
+          isBambuTag = false;
+          pauseMainTask = 0;
+          oledClearPriority();
+        }
+      }
+    }
+
     // Skip scanning during write operations, but keep NFC interface active
-    if (nfcReaderState != NFC_WRITING && !nfcWriteInProgress && !nfcReadingTaskSuspendRequest && !booting)
+    if (nfcReaderState != NFC_WRITING && !nfcWriteInProgress && !nfcReadingTaskSuspendRequest && !booting && !nfcGateClosed)
     {
       nfcReadingTaskSuspendState = false;
       yield();
@@ -1808,7 +1836,17 @@ void scanRfidTask(void * parameter) {
       nfcReadingTaskSuspendState = true;
 
       // Different behavior for write protection vs. full suspension
-      if (nfcWriteInProgress) {
+      if (nfcGateClosed && !nfcWriteInProgress && !nfcReadingTaskSuspendRequest && nfcReaderState != NFC_WRITING && !booting) {
+        // Gate zu: Waage misst, PN532 bleibt still (kein Funkfeld, kein I2C)
+        if (!nfcRfFieldOff) {
+          bool offOk = nfc.disableRFField();  // RFConfiguration: RF-Feld aus (Messung: Feld bleibt sonst nach dem Pollen an)
+          nfcRfFieldOffAt = millis();
+          nfcRfFieldOff = true;
+          Serial.println(offOk ? "NFC: RF-Feld aus (Gate zu)" : "NFC: RF-Feld aus FEHLGESCHLAGEN");
+        }
+        nfcReadingTaskSuspendState = false; // Schreibvorgaenge muessen warten, bis das Gate offen und der PN532 neu konfiguriert ist
+        vTaskDelay(pdMS_TO_TICKS(50));
+      } else if (nfcWriteInProgress) {
         // During write: Just pause scanning, don't disable NFC interface
         // Serial.println("NFC Scanning paused during write operation");
         vTaskDelay(pdMS_TO_TICKS(100)); // Shorter delay during write
@@ -1822,7 +1860,24 @@ void scanRfidTask(void * parameter) {
   }
 }
 
+void loadNfcStableOnly() {
+  Preferences preferences;
+  preferences.begin(NVS_NAMESPACE_SETTINGS, true);
+  nfcStableOnly = preferences.getBool(NVS_KEY_NFC_STABLE_ONLY, false);
+  preferences.end();
+  Serial.printf("NFC nur bei stabilem Gewicht: %s\n", nfcStableOnly ? "an" : "aus");
+}
+
+void saveNfcStableOnly(bool enabled) {
+  nfcStableOnly = enabled;
+  Preferences preferences;
+  preferences.begin(NVS_NAMESPACE_SETTINGS, false);
+  preferences.putBool(NVS_KEY_NFC_STABLE_ONLY, enabled);
+  preferences.end();
+}
+
 void startNfc() {
+  loadNfcStableOnly();
   oledShowProgressBar(4, NUM_SETUP_STEPS, DISPLAY_BOOT_TEXT, tr(STR_NFC_INIT));
   pulsePn532Reset();
   nfc.begin();                                           // Beginne Kommunikation mit RFID Leser
