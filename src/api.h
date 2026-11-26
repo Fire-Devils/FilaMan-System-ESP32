@@ -39,6 +39,9 @@ void sendTagDataAsync(String tagJson);
 extern volatile bool spoolFullGestureEnabled;       // Einstellung (Standard: aus)
 extern volatile bool spoolFullOverwritePending;     // Server meldete 409: Tipp-Bestaetigung wartet
 extern volatile unsigned long spoolFullOverwriteUntil;
+extern volatile bool spoolFullRestPending;           // Rest-Anzeige nach Tara-Meldung faellig
+extern volatile uint16_t spoolFullRestWeight;
+extern volatile unsigned long spoolFullRestAt;
 void loadSpoolFullGesture();
 void saveSpoolFullGesture(bool enabled);
 void sendSpoolFullAsync(int spoolId, String tagUuid, float weight, bool confirmOverwrite);

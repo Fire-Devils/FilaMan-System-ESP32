@@ -173,6 +173,12 @@ void loop() {
       oledClearPriority();
       mainTaskWasPaused = true;
     }
+    if (spoolFullRestPending && (long)(currentMillis - spoolFullRestAt) >= 0) {
+      spoolFullRestPending = false;
+      oledShowRemainingWeight(spoolFullRestWeight);
+      oledSetPriority(DISPLAY_PRIORITY_ACTION, 3000);
+      mainTaskWasPaused = true;
+    }
     if (spoolFullOverwritePending && (long)(currentMillis - spoolFullOverwriteUntil) >= 0) {
       spoolFullOverwritePending = false;
       oledClearPriority();

@@ -218,15 +218,14 @@ void saveSpoolFullGesture(bool enabled) {
     preferences.end();
 }
 
-// Kurze OLED-Meldung aus dem API-Task (blockiert nur den API-Task)
-extern bool mainTaskWasPaused;  // main.cpp: erzwingt Neuzeichnen der Gewichtsanzeige
+// Kurze OLED-Meldung aus dem API-Task (nicht blockierend, Prioritaet laeuft von selbst ab)
+volatile bool spoolFullRestPending = false;
+volatile uint16_t spoolFullRestWeight = 0;
+volatile unsigned long spoolFullRestAt = 0;
 
-static void spoolFullShow(const String& msg, unsigned long ms, uint8_t size = 1, bool restoreDisplay = true) {
+static void spoolFullShow(const String& msg, unsigned long ms, uint8_t size = 1) {
     oledDisplayText(msg, size);
     oledSetPriority(DISPLAY_PRIORITY_WARNING, ms);
-    vTaskDelay(pdMS_TO_TICKS(ms));
-    oledClearPriority();
-    if (restoreDisplay) mainTaskWasPaused = true;  // sonst bleibt die Meldung bei stabilem Gewicht stehen
 }
 
 bool sendSpoolFull(int spoolId, String tagUuid, float weight, bool confirmOverwrite) {
@@ -236,6 +235,7 @@ bool sendSpoolFull(int spoolId, String tagUuid, float weight, bool confirmOverwr
     }
     sfSpoolId = spoolId; sfTagUuid = tagUuid; sfWeight = weight;
     spoolFullOverwritePending = false;
+    spoolFullRestPending = false;
     HTTPClient http;
     http.setTimeout(10000);
     http.setReuse(false);
@@ -261,14 +261,12 @@ bool sendSpoolFull(int spoolId, String tagUuid, float weight, bool confirmOverwr
         String msg = "Tara new: " + String((int)lroundf(resp["new_tara_g"].as<float>())) + " g";
         if (!resp["old_tara_g"].isNull()) msg += "\nold: " + String((int)lroundf(resp["old_tara_g"].as<float>())) + " g";
         bool hasRemaining = resp["remaining_weight_g"].is<float>();
-        spoolFullShow(msg, 4000, 1, !hasRemaining);
+        spoolFullShow(msg, 4000);
         if (hasRemaining) {
-            // wie beim normalen Wiegen: danach "Rest" anzeigen, dann Gewichtsanzeige neu zeichnen
-            oledShowRemainingWeight((uint16_t)lroundf(resp["remaining_weight_g"].as<float>()));
-            oledSetPriority(DISPLAY_PRIORITY_ACTION, 3000);
-            vTaskDelay(pdMS_TO_TICKS(3000));
-            oledClearPriority();
-            mainTaskWasPaused = true;
+            // danach uebernimmt die Main-Loop die "Rest"-Anzeige
+            spoolFullRestWeight = (uint16_t)lroundf(resp["remaining_weight_g"].as<float>());
+            spoolFullRestAt = millis() + 4000;
+            spoolFullRestPending = true;
         }
         return true;
     }
