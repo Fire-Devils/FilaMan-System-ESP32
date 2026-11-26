@@ -276,6 +276,15 @@ static void updateNfcGate() {
   }
 }
 
+// Nur lesen, fuer GET /api/debug-state: kopiert die Gate-Werte (keine Zustandsaenderung)
+void scaleGetGateDebug(int16_t &refWeight, int16_t &openWeight, uint32_t &stableForMs, uint32_t &quietRemainingMs) {
+  unsigned long now = millis();
+  refWeight = gateRefWeight;
+  openWeight = gateOpenWeight;
+  stableForMs = now - gateLastChange;
+  quietRemainingMs = (gateQuietUntil > now) ? (gateQuietUntil - now) : 0;
+}
+
 // ##### Funktionen für Waage #####
 uint8_t setAutoTare(bool autoTareValue) {
   Serial.print("Set AutoTare to ");

@@ -15,6 +15,11 @@
 #include "wlan.h"
 #include "generated/web_assets.h"
 
+// Nur lesend fuer /api/debug-state
+extern int16_t lastDisplayedWeight;
+extern int16_t lastWeight;
+extern uint8_t weightSend;
+
 #ifndef VERSION
   #define VERSION "1.2.0"
 #endif
@@ -299,6 +304,46 @@ void setupWebserver(AsyncWebServer &server) {
         uint16_t timeout = (uint16_t)constrain((int)doc["sleepTimeout"], 0, 3600);
         saveOledSleepTimeout(timeout);
         request->send(200, "application/json", "{\"success\": true}");
+    });
+
+    // Diagnose: schreibgeschuetzter Momentaufnahme-Endpunkt, rechnet nur beim Abruf, keine Zustandsaenderung.
+    // Enthaelt keine Zugangsdaten (kein Geraete-Token, kein WLAN-Passwort, keine Server-Zugangsdaten).
+    server.on("/api/debug-state", HTTP_GET, [](AsyncWebServerRequest *request){
+        static const char* const nfcStateNames[] = {
+            "IDLE", "READING", "READ_SUCCESS", "READ_ERROR", "WRITING",
+            "WRITE_SUCCESS", "WRITE_ERROR", "BAMBU_DETECTED", "BAMBU_ERROR"
+        };
+        int16_t gateRef, gateOpen;
+        uint32_t stableFor, quietRemaining;
+        scaleGetGateDebug(gateRef, gateOpen, stableFor, quietRemaining);
+        uint8_t st = (uint8_t)nfcReaderState;
+
+        JsonDocument doc;
+        doc["version"] = VERSION;
+        doc["uptime_ms"] = millis();
+        doc["weight"]["displayed"] = lastDisplayedWeight;
+        doc["weight"]["main_last"] = lastWeight;
+        doc["weight"]["stable_counter"] = weightCounterToApi;
+        doc["weight"]["send"] = weightSend;
+        doc["scale"]["calibrated"] = (bool)scaleCalibrated;
+        doc["scale"]["error"] = (bool)scaleError;
+        doc["nfc"]["state"] = (st < sizeof(nfcStateNames) / sizeof(nfcStateNames[0])) ? nfcStateNames[st] : "UNKNOWN";
+        doc["nfc"]["tag_processed"] = (bool)tagProcessed;
+        doc["nfc"]["rescan_request"] = (bool)nfcRescanRequest;
+        doc["nfc"]["spool_id"] = activeSpoolId;
+        doc["nfc"]["tag_uid"] = activeTagUuid;
+        doc["nfc"]["bambu_tag"] = (bool)isBambuTag;
+        doc["gate"]["enabled"] = (bool)nfcStableOnly;
+        doc["gate"]["closed"] = (bool)nfcGateClosed;
+        doc["gate"]["rf_field_off"] = (bool)nfcRfFieldOff;
+        doc["gate"]["ref_weight"] = gateRef;
+        doc["gate"]["open_weight"] = gateOpen;
+        doc["gate"]["stable_for_ms"] = stableFor;
+        doc["gate"]["quiet_remaining_ms"] = quietRemaining;
+        doc["spool_full_gesture"] = (bool)spoolFullGestureEnabled;
+        String response;
+        serializeJson(doc, response);
+        request->send(200, "application/json", response);
     });
 
     // NFC-Einstellung: NFC nur bei stabilem Gewicht (Standard aus)
