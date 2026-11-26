@@ -57,6 +57,8 @@ void setup() {
   // NFC Reader
   startNfc();
 
+  loadSpoolFullGesture();
+
   // Touch Sensor
   pinMode(TTP223_PIN, INPUT_PULLUP);
   if (digitalRead(TTP223_PIN) == LOW)
@@ -116,6 +118,8 @@ int16_t lastWeight = 0;
 // Button debounce variables
 unsigned long lastButtonPress = 0;
 const unsigned long debounceDelay = 500; // 500 ms debounce delay
+#define LONG_PRESS_MS      1500   // Langdruck-Schwelle
+#define CONFIRM_WINDOW_MS  5000   // Zeitfenster fuer Bestaetigungs-Tipp
 
 unsigned long lastConnErrorShowTime = 0;
 const unsigned long connErrorShowInterval = 10000; // Show connection error every 10 seconds if exists
@@ -155,12 +159,74 @@ void loop() {
       }
   }
 
-  // Überprüfe den Status des Touch Sensors (nur wenn Waage vorhanden)
-  if (scaleConnected && touchSensorConnected && digitalRead(TTP223_PIN) == HIGH && currentMillis - lastButtonPress > debounceDelay)
+  // Touch-Taste: Zustandsautomat. Kurzer Druck -> Tara beim Loslassen; Langdruck (Einstellung an) -> "Spule voll".
+  if (scaleConnected && touchSensorConnected)
   {
-    lastButtonPress = currentMillis;
-    scaleTareRequest = true;
-    oledResetActivityTimer(); // Wake display on touch press
+    static bool pressed = false, longHandled = false;
+    static unsigned long pressStart = 0;
+    static unsigned long armUntil = 0;  // >0: "Spule voll? Tippen"-Fenster offen
+    bool touchNow = digitalRead(TTP223_PIN) == HIGH;
+
+    // Fenster ohne Tipp ablaufen lassen: normale Anzeige zurueck
+    if (armUntil && (long)(currentMillis - armUntil) >= 0) {
+      armUntil = 0;
+      oledClearPriority();
+      mainTaskWasPaused = true;
+    }
+    if (spoolFullOverwritePending && (long)(currentMillis - spoolFullOverwriteUntil) >= 0) {
+      spoolFullOverwritePending = false;
+      oledClearPriority();
+      mainTaskWasPaused = true;
+    }
+
+    if (touchNow && !pressed && currentMillis - lastButtonPress > debounceDelay) {
+      pressed = true;
+      longHandled = false;
+      pressStart = currentMillis;
+      oledResetActivityTimer(); // Wake display on touch press
+    }
+    else if (pressed && touchNow && !longHandled && spoolFullGestureEnabled && currentMillis - pressStart >= LONG_PRESS_MS) {
+      longHandled = true;  // Langdruck: loest nie zusaetzlich Tara aus
+      if (!spoolFullOverwritePending && !armUntil) {
+        bool tagKnown = nfcReaderState == NFC_READ_SUCCESS && activeTagUuid.length() > 0;
+        bool stable = weightCounterToApi > 3 && lastWeight > 5;
+        if (!tagKnown || !stable) {
+          oledDisplayText(tagKnown ? "Weight unstable" : "No tag", 2);
+          oledSetPriority(DISPLAY_PRIORITY_WARNING, 2000);
+          mainTaskWasPaused = true;
+        } else {
+          oledDisplayText("Spool full?\nTap", 2);
+          armUntil = currentMillis + CONFIRM_WINDOW_MS;
+          oledSetPriority(DISPLAY_PRIORITY_WARNING, CONFIRM_WINDOW_MS);
+        }
+      }
+    }
+    else if (pressed && !touchNow) {
+      pressed = false;
+      lastButtonPress = currentMillis;
+      if (!longHandled) {
+        // kurzer Tipp
+        if (spoolFullOverwritePending) {
+          spoolFullConfirmOverwriteAsync();
+          oledDisplayText("Sending...", 2);
+          oledSetPriority(DISPLAY_PRIORITY_WARNING, 1500);
+        } else if (armUntil) {
+          armUntil = 0;
+          bool stable = weightCounterToApi > 3 && lastWeight > 5;
+          if (nfcReaderState == NFC_READ_SUCCESS && activeTagUuid.length() > 0 && stable) {
+            sendSpoolFullAsync(isBambuTag ? 0 : activeSpoolId.toInt(), activeTagUuid, (float)lastWeight, false);
+            oledDisplayText("Sending...", 2);
+            oledSetPriority(DISPLAY_PRIORITY_WARNING, 1500);
+          } else {
+            oledDisplayText("Weight unstable", 2);
+            oledSetPriority(DISPLAY_PRIORITY_WARNING, 2000);
+            mainTaskWasPaused = true;
+          }
+        } else {
+          scaleTareRequest = true;
+        }
+      }
+    }
   }
 
   // Überprüfe regelmäßig die WLAN-Verbindung

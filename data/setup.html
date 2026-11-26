@@ -101,6 +101,17 @@
             </div>
 
             <div class="fm-card">
+                <h2>Touch Button</h2>
+                <div class="fm-form-group" style="margin-top: 1rem;">
+                    <label class="fm-label" for="spoolFullGesture">
+                        <input type="checkbox" id="spoolFullGesture"> Spool full: long press sets the empty weight
+                    </label>
+                    <p style="font-size: 0.8rem; margin-top: 0.5rem;">Off by default. Hold the touch button for 1.5 s with a spool tag read and a stable weight, then tap again within 5 s to store the current weight as the spool's empty weight (tare) in FilaMan. A short press always tares the scale. Applies immediately, no restart needed.</p>
+                </div>
+                <div id="spoolFullStatusMessage" style="margin-top: 0.5rem;"></div>
+            </div>
+
+            <div class="fm-card">
                 <h2>WiFi Settings</h2>
 
                 <div class="fm-form-group" style="margin-top: 1rem;">
@@ -218,6 +229,37 @@
                 msg.textContent = 'Error saving setting.';
                 msg.style.color = 'var(--error-text)';
                 console.error('Error saving NFC setting:', error);
+            });
+        });
+
+        // Spool full gesture
+        fetch('/api/spool-full-gesture')
+            .then(response => response.json())
+            .then(data => { document.getElementById('spoolFullGesture').checked = !!data.enabled; })
+            .catch(error => console.error('Error fetching spool-full setting:', error));
+
+        document.getElementById('spoolFullGesture').addEventListener('change', function() {
+            const msg = document.getElementById('spoolFullStatusMessage');
+            fetch('/api/spool-full-gesture', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: this.checked })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    msg.textContent = 'Saved.';
+                    msg.style.color = 'var(--success-text)';
+                    setTimeout(() => { msg.textContent = ''; }, 2000);
+                } else {
+                    msg.textContent = 'Error saving setting.';
+                    msg.style.color = 'var(--error-text)';
+                }
+            })
+            .catch(error => {
+                msg.textContent = 'Error saving setting.';
+                msg.style.color = 'var(--error-text)';
+                console.error('Error saving spool-full setting:', error);
             });
         });
 
