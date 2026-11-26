@@ -325,6 +325,30 @@ void setupWebserver(AsyncWebServer &server) {
         request->send(200, "application/json", "{\"success\": true}");
     });
 
+    // Einstellung: Geste "Spule voll" per Langdruck (Standard aus)
+    server.on("/api/spool-full-gesture", HTTP_GET, [](AsyncWebServerRequest *request){
+        JsonDocument doc;
+        doc["enabled"] = (bool)spoolFullGestureEnabled;
+        String response;
+        serializeJson(doc, response);
+        request->send(200, "application/json", response);
+    });
+
+    server.on("/api/spool-full-gesture", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, (const uint8_t*)data, len);
+        if (error) {
+            request->send(400, "application/json", "{\"success\": false, \"error\": \"Invalid JSON\"}");
+            return;
+        }
+        if (!doc["enabled"].is<bool>()) {
+            request->send(400, "application/json", "{\"success\": false, \"error\": \"Missing enabled\"}");
+            return;
+        }
+        saveSpoolFullGesture(doc["enabled"].as<bool>());
+        request->send(200, "application/json", "{\"success\": true}");
+    });
+
     // WiFi TX Power API (Wert in 0.1 dBm, z.B. 195 = 19.5dBm)
     server.on("/api/wifi-power", HTTP_GET, [](AsyncWebServerRequest *request){
         JsonDocument doc;

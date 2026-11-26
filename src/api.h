@@ -18,7 +18,8 @@ typedef enum {
     API_REQUEST_WEIGHT,
     API_REQUEST_LOCATE,
     API_REQUEST_RFID_RESULT,
-    API_REQUEST_TAG_DATA
+    API_REQUEST_TAG_DATA,
+    API_REQUEST_SPOOL_FULL
 } FilamanApiRequestType;
 
 extern volatile filamanApiStateType filamanApiState;
@@ -34,9 +35,19 @@ void sendLocationAsync(int spoolId, String spoolTagUuid, int locationId, String 
 void sendRfidResultAsync(String tagUuid, int spoolId, int locationId, bool success, String errorMessage, float remainingWeight = 0);
 void sendTagDataAsync(String tagJson);
 
+// Geste "Spule voll" (Langdruck): Leergewicht (Tara) der Spule auf das aktuelle Gewicht setzen
+extern volatile bool spoolFullGestureEnabled;       // Einstellung (Standard: aus)
+extern volatile bool spoolFullOverwritePending;     // Server meldete 409: Tipp-Bestaetigung wartet
+extern volatile unsigned long spoolFullOverwriteUntil;
+void loadSpoolFullGesture();
+void saveSpoolFullGesture(bool enabled);
+void sendSpoolFullAsync(int spoolId, String tagUuid, float weight, bool confirmOverwrite);
+bool spoolFullConfirmOverwriteAsync();               // wiederholt den letzten Aufruf mit confirm_overwrite=true
+
 // Internal blocking functions (used by async task)
 bool sendHeartbeat();
 bool sendWeight(int spoolId, String tagUuid, float weight);
+bool sendSpoolFull(int spoolId, String tagUuid, float weight, bool confirmOverwrite);
 bool sendLocation(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid);
 bool sendRfidResult(String tagUuid, int spoolId, int locationId, bool success, String errorMessage, float remainingWeight = 0);
 

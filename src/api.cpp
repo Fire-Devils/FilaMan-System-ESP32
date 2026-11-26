@@ -196,6 +196,94 @@ bool sendWeight(int spoolId, String tagUuid, float measuredWeight) {
     return false;
 }
 
+volatile bool spoolFullGestureEnabled = false;
+volatile bool spoolFullOverwritePending = false;
+volatile unsigned long spoolFullOverwriteUntil = 0;
+static int sfSpoolId = 0;
+static String sfTagUuid;
+static float sfWeight = 0;
+
+void loadSpoolFullGesture() {
+    Preferences preferences;
+    preferences.begin(NVS_NAMESPACE_SETTINGS, true);
+    spoolFullGestureEnabled = preferences.getBool(NVS_KEY_SPOOL_FULL_GESTURE, false);
+    preferences.end();
+}
+
+void saveSpoolFullGesture(bool enabled) {
+    spoolFullGestureEnabled = enabled;
+    Preferences preferences;
+    preferences.begin(NVS_NAMESPACE_SETTINGS, false);
+    preferences.putBool(NVS_KEY_SPOOL_FULL_GESTURE, enabled);
+    preferences.end();
+}
+
+// Kurze OLED-Meldung aus dem API-Task (blockiert nur den API-Task)
+static void spoolFullShow(const String& msg, unsigned long ms, uint8_t size = 1) {
+    oledDisplayText(msg, size);
+    oledSetPriority(DISPLAY_PRIORITY_WARNING, ms);
+    vTaskDelay(pdMS_TO_TICKS(ms));
+    oledClearPriority();
+}
+
+bool sendSpoolFull(int spoolId, String tagUuid, float weight, bool confirmOverwrite) {
+    if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) {
+        spoolFullShow("No connection", 2500);
+        return false;
+    }
+    sfSpoolId = spoolId; sfTagUuid = tagUuid; sfWeight = weight;
+    spoolFullOverwritePending = false;
+    HTTPClient http;
+    http.setTimeout(10000);
+    http.setReuse(false);
+    http.begin(filamanUrl + "/api/v1/devices/scale/spool-full");
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", "Device " + filamanToken);
+    JsonDocument doc;
+    if (spoolId > 0) doc["spool_id"] = spoolId;
+    if (tagUuid.length() > 0) doc["tag_uuid"] = tagUuid;
+    doc["measured_weight_g"] = weight;
+    doc["confirm_overwrite"] = confirmOverwrite;
+    String payload;
+    serializeJson(doc, payload);
+    int httpCode = http.POST(payload);
+    Serial.printf("spool-full response code: %d\n", httpCode);
+    String body = (httpCode > 0) ? http.getString() : String();
+    http.end();
+
+    JsonDocument resp;
+    bool parsed = (httpCode > 0) && !deserializeJson(resp, body);
+
+    if (httpCode == 200 && parsed) {
+        String msg = "Tara new: " + String((int)lroundf(resp["new_tara_g"].as<float>())) + " g";
+        if (!resp["old_tara_g"].isNull()) msg += "\nold: " + String((int)lroundf(resp["old_tara_g"].as<float>())) + " g";
+        spoolFullShow(msg, 4000);
+        return true;
+    }
+    if (httpCode == 409 && parsed) {
+        JsonObject d = resp["detail"];
+        int oldT = (int)lroundf(d["old_tara_g"].as<float>());
+        int newT = (int)lroundf(d["new_tara_g"].as<float>());
+        oledDisplayText("Tara old " + String(oldT) + " / new " + String(newT) + "\nTap = accept", 1);
+        spoolFullOverwriteUntil = millis() + 5000;
+        spoolFullOverwritePending = true;
+        oledSetPriority(DISPLAY_PRIORITY_WARNING, 5000);
+        return false;  // Anzeige bleibt; Main-Loop raeumt nach Ablauf des Fensters auf
+    }
+    if (httpCode == 422 && parsed) {
+        int t = (int)lroundf(resp["detail"]["new_tara_g"].as<float>());
+        spoolFullShow("Tara " + String(t) + " g\nout of range", 3500);
+        return false;
+    }
+    if (httpCode == 404) {
+        spoolFullShow("Spool/server\nnot found", 3500);
+        return false;
+    }
+    if (httpCode <= 0) spoolFullShow("Network error", 3000);
+    else spoolFullShow("API error " + String(httpCode), 3000);
+    return false;
+}
+
 bool sendLocation(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid) {
     if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
     HTTPClient http;
@@ -307,6 +395,7 @@ void filamanApiTask(void* pvParameters) {
                 }
                 case API_REQUEST_HEARTBEAT: sendHeartbeatWithRetry(2); break;
                 case API_REQUEST_WEIGHT: sendWeight(req.id1, req.str1, req.val); break;
+                case API_REQUEST_SPOOL_FULL: sendSpoolFull(req.id1, req.str1, req.val, req.bool1); break;
                 case API_REQUEST_LOCATE: sendLocation(req.id1, req.str1, req.id2, req.str2); break;
                 case API_REQUEST_RFID_RESULT: sendRfidResult(req.str1, req.id1, req.id2, req.bool1, req.str3, req.remainingWeight); break;
                 case API_REQUEST_TAG_DATA: sendTagData(req.str1); break;
@@ -369,6 +458,23 @@ void sendWeightAsync(int spoolId, String tagUuid, float weight) {
     r.str1 = tagUuid;
     r.val = weight;
     if (enqueueRequest(r)) Serial.println("Weight queued for API");
+}
+
+void sendSpoolFullAsync(int spoolId, String tagUuid, float weight, bool confirmOverwrite) {
+    if (!checkFilamanRegistration()) return;
+    ApiRequest r = makeRequest(API_REQUEST_SPOOL_FULL);
+    r.id1 = spoolId;
+    r.str1 = tagUuid;
+    r.val = weight;
+    r.bool1 = confirmOverwrite;
+    enqueueRequest(r);
+}
+
+bool spoolFullConfirmOverwriteAsync() {
+    if (!spoolFullOverwritePending) return false;
+    spoolFullOverwritePending = false;
+    sendSpoolFullAsync(sfSpoolId, sfTagUuid, sfWeight, true);
+    return true;
 }
 
 void sendLocationAsync(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid) {
