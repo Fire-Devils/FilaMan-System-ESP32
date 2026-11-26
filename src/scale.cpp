@@ -221,7 +221,7 @@ int16_t getFilteredDisplayWeight() {
 #define NFC_GATE_RELEASE_DELTA_G  5      // Gewichtsaenderung, die die Pause vorzeitig beendet
 #define NFC_GATE_SETTLE_MS        400    // nach dem Funkfeld-Aus noch so lange Messwerte verwerfen (Messung: Ausschlag bis ~0,5 s danach)
 static unsigned long gateLastChange = 0, gateOpenedAt = 0, gateQuietUntil = 0, gateClosedAt = 0;
-static int16_t gateLastShown = 0, gateRefWeight = 0;
+static int16_t gateLastShown = 0, gateRefWeight = 0, gateOpenWeight = 0;
 
 // true, solange NFC pollt (oder gerade aufgehoert hat): Messwerte nicht in den Filter geben, nicht tarieren
 static bool nfcNoisePhase() {
@@ -255,6 +255,7 @@ static void updateNfcGate() {
     if (nfcGateClosed) {
       nfcGateClosed = false;
       gateOpenedAt = now;
+      gateOpenWeight = lastDisplayedWeight;
     }
     return;
   }
@@ -263,10 +264,13 @@ static void updateNfcGate() {
     if (now - gateLastChange >= NFC_GATE_STABLE_MS && now >= gateQuietUntil) {
       nfcGateClosed = false;
       gateOpenedAt = now;
+      gateOpenWeight = lastDisplayedWeight;
     }
   } else if (now - gateOpenedAt >= NFC_GATE_WINDOW_MS) {
     nfcGateClosed = true;
     gateClosedAt = now;
+    // Gewicht war im ganzen Fenster stabil: Der Neuscan-Merker stammt nur von der veralteten Referenz (leere Waage), der Tag wurde in diesem Fenster gelesen
+    if (abs(lastDisplayedWeight - gateOpenWeight) < NFC_GATE_RELEASE_DELTA_G) nfcRescanRequest = false;
     gateRefWeight = lastDisplayedWeight;
     gateQuietUntil = now + (nfcReaderState != NFC_IDLE ? NFC_GATE_QUIET_PRESENT_MS : NFC_GATE_QUIET_IDLE_MS);
   }

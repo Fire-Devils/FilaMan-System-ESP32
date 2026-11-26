@@ -219,11 +219,14 @@ void saveSpoolFullGesture(bool enabled) {
 }
 
 // Kurze OLED-Meldung aus dem API-Task (blockiert nur den API-Task)
-static void spoolFullShow(const String& msg, unsigned long ms, uint8_t size = 1) {
+extern bool mainTaskWasPaused;  // main.cpp: erzwingt Neuzeichnen der Gewichtsanzeige
+
+static void spoolFullShow(const String& msg, unsigned long ms, uint8_t size = 1, bool restoreDisplay = true) {
     oledDisplayText(msg, size);
     oledSetPriority(DISPLAY_PRIORITY_WARNING, ms);
     vTaskDelay(pdMS_TO_TICKS(ms));
     oledClearPriority();
+    if (restoreDisplay) mainTaskWasPaused = true;  // sonst bleibt die Meldung bei stabilem Gewicht stehen
 }
 
 bool sendSpoolFull(int spoolId, String tagUuid, float weight, bool confirmOverwrite) {
@@ -257,7 +260,16 @@ bool sendSpoolFull(int spoolId, String tagUuid, float weight, bool confirmOverwr
     if (httpCode == 200 && parsed) {
         String msg = "Tara new: " + String((int)lroundf(resp["new_tara_g"].as<float>())) + " g";
         if (!resp["old_tara_g"].isNull()) msg += "\nold: " + String((int)lroundf(resp["old_tara_g"].as<float>())) + " g";
-        spoolFullShow(msg, 4000);
+        bool hasRemaining = resp["remaining_weight_g"].is<float>();
+        spoolFullShow(msg, 4000, 1, !hasRemaining);
+        if (hasRemaining) {
+            // wie beim normalen Wiegen: danach "Rest" anzeigen, dann Gewichtsanzeige neu zeichnen
+            oledShowRemainingWeight((uint16_t)lroundf(resp["remaining_weight_g"].as<float>()));
+            oledSetPriority(DISPLAY_PRIORITY_ACTION, 3000);
+            vTaskDelay(pdMS_TO_TICKS(3000));
+            oledClearPriority();
+            mainTaskWasPaused = true;
+        }
         return true;
     }
     if (httpCode == 409 && parsed) {
@@ -265,9 +277,9 @@ bool sendSpoolFull(int spoolId, String tagUuid, float weight, bool confirmOverwr
         int oldT = (int)lroundf(d["old_tara_g"].as<float>());
         int newT = (int)lroundf(d["new_tara_g"].as<float>());
         oledDisplayText("Tara old " + String(oldT) + " / new " + String(newT) + "\nTap = accept", 1);
-        spoolFullOverwriteUntil = millis() + 5000;
+        spoolFullOverwriteUntil = millis() + 8000;
         spoolFullOverwritePending = true;
-        oledSetPriority(DISPLAY_PRIORITY_WARNING, 5000);
+        oledSetPriority(DISPLAY_PRIORITY_WARNING, 8000);
         return false;  // Anzeige bleibt; Main-Loop raeumt nach Ablauf des Fensters auf
     }
     if (httpCode == 422 && parsed) {

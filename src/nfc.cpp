@@ -34,6 +34,7 @@ String activeTagUuid = "";
 String lastSpoolId = "";
 String nfcJsonData = "";
 volatile bool tagProcessed = false;
+extern uint8_t weightSend;  // main.cpp
 volatile bool isBambuTag = false;
 volatile bool nfcReadingTaskSuspendRequest = false;
 volatile bool nfcReadingTaskSuspendState = false;
@@ -1605,6 +1606,7 @@ void scanRfidTask(void * parameter) {
           activeSpoolId = "";
           activeTagUuid = "";
           tagProcessed = false;
+          weightSend = 0;  // Sendemerker mit zuruecksetzen, sonst wird der neu gelesene Tag nie gesendet (Display bleibt auf "Wiegen")
           isBambuTag = false;
           pauseMainTask = 0;
           oledClearPriority();

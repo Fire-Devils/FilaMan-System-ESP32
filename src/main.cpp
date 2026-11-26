@@ -119,7 +119,7 @@ int16_t lastWeight = 0;
 unsigned long lastButtonPress = 0;
 const unsigned long debounceDelay = 500; // 500 ms debounce delay
 #define LONG_PRESS_MS      1500   // Langdruck-Schwelle
-#define CONFIRM_WINDOW_MS  5000   // Zeitfenster fuer Bestaetigungs-Tipp
+#define CONFIRM_WINDOW_MS  8000   // Zeitfenster fuer Bestaetigungs-Tipp
 
 unsigned long lastConnErrorShowTime = 0;
 const unsigned long connErrorShowInterval = 10000; // Show connection error every 10 seconds if exists
@@ -188,7 +188,8 @@ void loop() {
     else if (pressed && touchNow && !longHandled && spoolFullGestureEnabled && currentMillis - pressStart >= LONG_PRESS_MS) {
       longHandled = true;  // Langdruck: loest nie zusaetzlich Tara aus
       if (!spoolFullOverwritePending && !armUntil) {
-        bool tagKnown = nfcReaderState == NFC_READ_SUCCESS && activeTagUuid.length() > 0;
+        // Tag ist bekannt, wenn er gelesen oder gerade geschrieben wurde (nach dem Schreiben steht der Zustand auf NFC_WRITE_SUCCESS)
+        bool tagKnown = (nfcReaderState == NFC_READ_SUCCESS || nfcReaderState == NFC_WRITE_SUCCESS) && activeTagUuid.length() > 0;
         bool stable = weightCounterToApi > 3 && lastWeight > 5;
         if (!tagKnown || !stable) {
           oledDisplayText(tagKnown ? "Weight unstable" : "No tag", 2);
@@ -213,7 +214,7 @@ void loop() {
         } else if (armUntil) {
           armUntil = 0;
           bool stable = weightCounterToApi > 3 && lastWeight > 5;
-          if (nfcReaderState == NFC_READ_SUCCESS && activeTagUuid.length() > 0 && stable) {
+          if ((nfcReaderState == NFC_READ_SUCCESS || nfcReaderState == NFC_WRITE_SUCCESS) && activeTagUuid.length() > 0 && stable) {
             sendSpoolFullAsync(isBambuTag ? 0 : activeSpoolId.toInt(), activeTagUuid, (float)lastWeight, false);
             oledDisplayText("Sending...", 2);
             oledSetPriority(DISPLAY_PRIORITY_WARNING, 1500);
