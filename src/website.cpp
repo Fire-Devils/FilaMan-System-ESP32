@@ -19,6 +19,7 @@
 extern int16_t lastDisplayedWeight;
 extern int16_t lastWeight;
 extern uint8_t weightSend;
+extern unsigned long spoolFullArmUntil;
 
 #ifndef VERSION
   #define VERSION "1.2.0"
@@ -341,6 +342,22 @@ void setupWebserver(AsyncWebServer &server) {
         doc["gate"]["stable_for_ms"] = stableFor;
         doc["gate"]["quiet_remaining_ms"] = quietRemaining;
         doc["spool_full_gesture"] = (bool)spoolFullGestureEnabled;
+        unsigned long nowMs = millis();
+        unsigned long armUntil = spoolFullArmUntil;
+        unsigned long overwriteUntil = spoolFullOverwriteUntil;
+        bool overwritePending = spoolFullOverwritePending;
+        unsigned long lastAt = spoolFullLastAt;
+        int lastCode = spoolFullLastHttpCode;
+        JsonObject sf = doc["spool_full"].to<JsonObject>();
+        sf["gesture"] = (bool)spoolFullGestureEnabled;
+        sf["arm_open"] = armUntil != 0;
+        sf["arm_remaining_ms"] = (armUntil != 0 && (long)(armUntil - nowMs) > 0) ? (unsigned long)(armUntil - nowMs) : 0;
+        sf["overwrite_pending"] = overwritePending;
+        sf["overwrite_remaining_ms"] = (overwritePending && (long)(overwriteUntil - nowMs) > 0) ? (unsigned long)(overwriteUntil - nowMs) : 0;
+        sf["last_http_code"] = lastCode;
+        if (lastCode != 0) sf["last_age_ms"] = nowMs - lastAt;
+        if (spoolFullLastOldTara >= 0) sf["last_old_tara_g"] = (int)spoolFullLastOldTara;
+        if (spoolFullLastNewTara >= 0) sf["last_new_tara_g"] = (int)spoolFullLastNewTara;
         String response;
         serializeJson(doc, response);
         request->send(200, "application/json", response);
