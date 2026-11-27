@@ -1609,6 +1609,7 @@ void scanRfidTask(void * parameter) {
           weightSend = 0;  // Sendemerker mit zuruecksetzen, sonst wird der neu gelesene Tag nie gesendet (Display bleibt auf "Wiegen")
           isBambuTag = false;
           pauseMainTask = 0;
+          lastRemainingShown = 0;  // Rest der vorherigen Spule nicht fuer den neuen Tag wiederverwenden
           oledClearPriority();
         }
       }
@@ -1643,6 +1644,7 @@ void scanRfidTask(void * parameter) {
 
         nfcReaderState = NFC_READING;
         pauseMainTask = 1;
+        lastRemainingShown = 0;  // Rest der vorherigen Spule nicht fuer den neuen Tag wiederverwenden
 
         oledShowProgressBar(0, 4, tr(STR_READING), tr(STR_DETECTING_TAG));
         oledSetPriority(DISPLAY_PRIORITY_ACTION, 1500);
@@ -1656,6 +1658,7 @@ void scanRfidTask(void * parameter) {
           Serial.println("NFC: Schreib-/Suspend-Anforderung waehrend Lesevorgang - Durchlauf abgebrochen");
           nfcReaderState = NFC_IDLE;
           pauseMainTask = 0;
+          lastRemainingShown = 0;  // Rest der vorherigen Spule nicht fuer den neuen Tag wiederverwenden
           oledClearPriority();
           continue;
         }
@@ -1807,6 +1810,7 @@ void scanRfidTask(void * parameter) {
         activeTagUuid = "";
         tagProcessed = false;
         pauseMainTask = 0;
+        lastRemainingShown = 0;  // Rest der vorherigen Spule nicht fuer den neuen Tag wiederverwenden
         oledClearPriority();
         oledShowWeight(weight);
       }
