@@ -20,6 +20,7 @@ extern int16_t lastDisplayedWeight;
 extern int16_t lastWeight;
 extern uint8_t weightSend;
 extern unsigned long spoolFullArmUntil;
+extern bool mainTaskWasPaused;
 
 #ifndef VERSION
   #define VERSION "1.2.0"
@@ -348,6 +349,17 @@ void setupWebserver(AsyncWebServer &server) {
         bool overwritePending = spoolFullOverwritePending;
         unsigned long lastAt = spoolFullLastAt;
         int lastCode = spoolFullLastHttpCode;
+        uint8_t dispPrio; unsigned long dispAge, dispMin; bool dispAsleep;
+        oledGetDebug(dispPrio, dispAge, dispMin, dispAsleep);
+        JsonObject dp = doc["display"].to<JsonObject>();
+        dp["priority"] = dispPrio;
+        dp["priority_age_ms"] = dispAge;
+        dp["priority_min_ms"] = dispMin;
+        dp["asleep"] = dispAsleep;
+        dp["main_task_was_paused"] = mainTaskWasPaused;
+        dp["pause_main_task"] = (uint8_t)pauseMainTask;
+        dp["nfc_write_in_progress"] = (bool)nfcWriteInProgress;
+        dp["scan_request_active"] = (bool)scanRequestActive;
         JsonObject sf = doc["spool_full"].to<JsonObject>();
         sf["gesture"] = (bool)spoolFullGestureEnabled;
         sf["arm_open"] = armUntil != 0;

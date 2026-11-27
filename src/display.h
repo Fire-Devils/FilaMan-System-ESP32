@@ -23,6 +23,8 @@ bool oledCanUpdate(DisplayPriority newPriority);
 void oledSetPriority(DisplayPriority priority, unsigned long minDurationMs);
 void oledClearPriority();
 DisplayPriority oledGetCurrentPriority();
+// Nur lesen, fuer /api/debug-state (aendert nichts, anders als oledGetCurrentPriority)
+void oledGetDebug(uint8_t &priority, unsigned long &ageMs, unsigned long &minDurationMs, bool &asleep);
 
 void setupDisplay();
 void oledclearline();
