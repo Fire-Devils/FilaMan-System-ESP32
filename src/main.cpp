@@ -113,6 +113,7 @@ unsigned long lastWifiCheckTime = 0;
 unsigned long lastTopRowUpdateTime = 0;
 
 uint8_t weightSend = 0;
+unsigned long spoolFullArmUntil = 0;  // >0: "Spule voll? Tippen"-Fenster offen (Ende in millis(), auch fuer /api/debug-state)
 int16_t lastWeight = 0;
 
 // Button debounce variables
@@ -164,12 +165,11 @@ void loop() {
   {
     static bool pressed = false, longHandled = false;
     static unsigned long pressStart = 0;
-    static unsigned long armUntil = 0;  // >0: "Spule voll? Tippen"-Fenster offen
     bool touchNow = digitalRead(TTP223_PIN) == HIGH;
 
     // Fenster ohne Tipp ablaufen lassen: normale Anzeige zurueck
-    if (armUntil && (long)(currentMillis - armUntil) >= 0) {
-      armUntil = 0;
+    if (spoolFullArmUntil && (long)(currentMillis - spoolFullArmUntil) >= 0) {
+      spoolFullArmUntil = 0;
       oledClearPriority();
       mainTaskWasPaused = true;
     }
@@ -193,7 +193,7 @@ void loop() {
     }
     else if (pressed && touchNow && !longHandled && spoolFullGestureEnabled && currentMillis - pressStart >= LONG_PRESS_MS) {
       longHandled = true;  // Langdruck: loest nie zusaetzlich Tara aus
-      if (!spoolFullOverwritePending && !armUntil) {
+      if (!spoolFullOverwritePending && !spoolFullArmUntil) {
         // Tag ist bekannt, wenn er gelesen oder gerade geschrieben wurde (nach dem Schreiben steht der Zustand auf NFC_WRITE_SUCCESS)
         bool tagKnown = (nfcReaderState == NFC_READ_SUCCESS || nfcReaderState == NFC_WRITE_SUCCESS) && activeTagUuid.length() > 0;
         bool stable = weightCounterToApi > 3 && lastWeight > 5;
@@ -203,7 +203,7 @@ void loop() {
           mainTaskWasPaused = true;
         } else {
           oledDisplayText("Spool full?\nTap", 2);
-          armUntil = currentMillis + CONFIRM_WINDOW_MS;
+          spoolFullArmUntil = currentMillis + CONFIRM_WINDOW_MS;
           oledSetPriority(DISPLAY_PRIORITY_WARNING, CONFIRM_WINDOW_MS);
         }
       }
@@ -217,8 +217,8 @@ void loop() {
           spoolFullConfirmOverwriteAsync();
           oledDisplayText("Sending...", 2);
           oledSetPriority(DISPLAY_PRIORITY_WARNING, 1500);
-        } else if (armUntil) {
-          armUntil = 0;
+        } else if (spoolFullArmUntil) {
+          spoolFullArmUntil = 0;
           bool stable = weightCounterToApi > 3 && lastWeight > 5;
           if ((nfcReaderState == NFC_READ_SUCCESS || nfcReaderState == NFC_WRITE_SUCCESS) && activeTagUuid.length() > 0 && stable) {
             sendSpoolFullAsync(isBambuTag ? 0 : activeSpoolId.toInt(), activeTagUuid, (float)lastWeight, false);

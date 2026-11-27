@@ -199,6 +199,10 @@ bool sendWeight(int spoolId, String tagUuid, float measuredWeight) {
 volatile bool spoolFullGestureEnabled = false;
 volatile bool spoolFullOverwritePending = false;
 volatile unsigned long spoolFullOverwriteUntil = 0;
+volatile int spoolFullLastHttpCode = 0;
+volatile unsigned long spoolFullLastAt = 0;
+volatile int spoolFullLastOldTara = -1;
+volatile int spoolFullLastNewTara = -1;
 static int sfSpoolId = 0;
 static String sfTagUuid;
 static float sfWeight = 0;
@@ -256,6 +260,17 @@ bool sendSpoolFull(int spoolId, String tagUuid, float weight, bool confirmOverwr
 
     JsonDocument resp;
     bool parsed = (httpCode > 0) && !deserializeJson(resp, body);
+
+    // Fuer /api/debug-state: Statuscode und Tara-Werte der letzten Antwort merken (nur kopieren)
+    spoolFullLastOldTara = -1;
+    spoolFullLastNewTara = -1;
+    if (parsed) {
+        JsonVariant src = (httpCode == 200) ? resp.as<JsonVariant>() : resp["detail"].as<JsonVariant>();
+        if (src["old_tara_g"].is<float>()) spoolFullLastOldTara = (int)lroundf(src["old_tara_g"].as<float>());
+        if (src["new_tara_g"].is<float>()) spoolFullLastNewTara = (int)lroundf(src["new_tara_g"].as<float>());
+    }
+    spoolFullLastHttpCode = httpCode;
+    spoolFullLastAt = millis();
 
     if (httpCode == 200 && parsed) {
         String msg = "Tara new: " + String((int)lroundf(resp["new_tara_g"].as<float>())) + " g";
