@@ -177,6 +177,7 @@ bool sendWeight(int spoolId, String tagUuid, float measuredWeight) {
         DeserializationError error = deserializeJson(responseDoc, response);
         if (!error && responseDoc["remaining_weight_g"].is<float>()) {
             int remaining = (int)responseDoc["remaining_weight_g"].as<float>();
+            lastRemainingShown = (uint16_t)remaining;
             oledShowRemainingWeight(remaining);
             oledSetPriority(DISPLAY_PRIORITY_ACTION, 3000);
             vTaskDelay(pdMS_TO_TICKS(3000));
@@ -225,6 +226,7 @@ void saveSpoolFullGesture(bool enabled) {
 // Kurze OLED-Meldung aus dem API-Task (nicht blockierend, Prioritaet laeuft von selbst ab)
 volatile bool spoolFullRestPending = false;
 volatile uint16_t spoolFullRestWeight = 0;
+volatile uint16_t lastRemainingShown = 0;
 volatile unsigned long spoolFullRestAt = 0;
 
 static void spoolFullShow(const String& msg, unsigned long ms, uint8_t size = 1) {
@@ -280,6 +282,7 @@ bool sendSpoolFull(int spoolId, String tagUuid, float weight, bool confirmOverwr
         if (hasRemaining) {
             // danach uebernimmt die Main-Loop die "Rest"-Anzeige
             spoolFullRestWeight = (uint16_t)lroundf(resp["remaining_weight_g"].as<float>());
+            lastRemainingShown = spoolFullRestWeight;
             spoolFullRestAt = millis() + 4000;
             spoolFullRestPending = true;
         }
