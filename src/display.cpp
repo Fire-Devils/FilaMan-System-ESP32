@@ -119,6 +119,13 @@ void oledClearPriority() {
     priorityMinDuration = 0;
 }
 
+void oledGetDebug(uint8_t &priority, unsigned long &ageMs, unsigned long &minDurationMs, bool &asleep) {
+    priority = (uint8_t)currentPriority;
+    ageMs = millis() - prioritySetTime;
+    minDurationMs = priorityMinDuration;
+    asleep = oledAsleep;
+}
+
 DisplayPriority oledGetCurrentPriority() {
     // Auto-expire: if min duration has passed, priority is effectively NONE
     if (currentPriority != DISPLAY_PRIORITY_NONE) {
