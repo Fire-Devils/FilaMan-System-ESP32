@@ -45,6 +45,7 @@ extern volatile int spoolFullLastOldTara;             // -1 = unbekannt
 extern volatile int spoolFullLastNewTara;             // -1 = unbekannt
 extern volatile bool spoolFullRestPending;           // Rest-Anzeige nach Tara-Meldung faellig
 extern volatile uint16_t spoolFullRestWeight;
+extern volatile uint16_t lastRemainingShown;          // zuletzt angezeigter Rest (0 = keiner), zum Wiederherstellen der Anzeige nach Ablauf der Spule-voll-Fenster
 extern volatile unsigned long spoolFullRestAt;
 void loadSpoolFullGesture();
 void saveSpoolFullGesture(bool enabled);

@@ -167,11 +167,21 @@ void loop() {
     static unsigned long pressStart = 0;
     bool touchNow = digitalRead(TTP223_PIN) == HIGH;
 
+    // Solange ein Tag auf dem Leser liegt, ist pauseMainTask gesetzt und die Gewichtsanzeige gesperrt (nfc.cpp).
+    // Dann zeichnet mainTaskWasPaused nichts neu und die Meldung bliebe stehen: stattdessen den letzten Rest bzw. das Gewicht zeigen.
+    auto restoreDisplayAfterSpoolFull = [&]() {
+      oledClearPriority();
+      if (pauseMainTask != 0) {
+        if (lastRemainingShown > 0) oledShowRemainingWeight(lastRemainingShown);
+        else oledShowWeight(weight);
+      }
+      mainTaskWasPaused = true;
+    };
+
     // Fenster ohne Tipp ablaufen lassen: normale Anzeige zurueck
     if (spoolFullArmUntil && (long)(currentMillis - spoolFullArmUntil) >= 0) {
       spoolFullArmUntil = 0;
-      oledClearPriority();
-      mainTaskWasPaused = true;
+      restoreDisplayAfterSpoolFull();
     }
     if (spoolFullRestPending && (long)(currentMillis - spoolFullRestAt) >= 0) {
       spoolFullRestPending = false;
@@ -181,8 +191,7 @@ void loop() {
     }
     if (spoolFullOverwritePending && (long)(currentMillis - spoolFullOverwriteUntil) >= 0) {
       spoolFullOverwritePending = false;
-      oledClearPriority();
-      mainTaskWasPaused = true;
+      restoreDisplayAfterSpoolFull();
     }
 
     if (touchNow && !pressed && currentMillis - lastButtonPress > debounceDelay) {
