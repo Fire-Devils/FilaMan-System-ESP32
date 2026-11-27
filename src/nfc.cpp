@@ -32,6 +32,8 @@ JsonDocument rfidData;
 String activeSpoolId = "";
 String activeTagUuid = "";
 String lastSpoolId = "";
+// The location tag replaces activeTagUuid, so retain the spool UID separately.
+static String lastSpoolTagUuid = "";
 String nfcJsonData = "";
 volatile bool tagProcessed = false;
 extern uint8_t weightSend;  // main.cpp
@@ -47,6 +49,17 @@ volatile bool nfcWriteInProgress = false; // Prevent any tag operations during w
 volatile bool scanRequestActive = false;  // Set by website when frontend requests a tag scan
 unsigned long scanRequestStartedAtMs = 0;
 const unsigned long SCAN_REQUEST_TIMEOUT_MS = 30000;
+
+static void clearLastSpool() {
+    lastSpoolId = "";
+    lastSpoolTagUuid = "";
+}
+
+static void rememberSpoolForLocation(const String& spoolId, const String& tagUuid) {
+    if (scanRequestActive) return;
+    lastSpoolId = spoolId;
+    lastSpoolTagUuid = tagUuid;
+}
 
 void sendScanRequestErrorToBackend(const char* errorMessage) {
     if (!scanRequestActive) {
@@ -106,6 +119,7 @@ bool detectBambuTag(const uint8_t* uid, uint8_t uidLength) {
     isBambuTag = true;
     activeTagUuid = uidString;
     activeSpoolId = ""; // Will be resolved by FilaMan API based on tag UID
+    rememberSpoolForLocation(activeSpoolId, activeTagUuid);
 
     // Create minimal JSON for compatibility
     JsonDocument doc;
@@ -1111,6 +1125,7 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, size_t bufferSize, Stri
   {
     nfcJsonData = "";
     Serial.println("Fehler beim Verarbeiten des JSON-Dokuments");
+    clearLastSpool();
     return false;
   }
   else
@@ -1128,7 +1143,7 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, size_t bufferSize, Stri
           oledShowProgressBar(2, 4, tr(STR_SPOOL_TAG), tr(STR_WEIGHING));
           oledSetPriority(DISPLAY_PRIORITY_ACTION, 2000);
           activeSpoolId = doc[idKey].as<String>();
-          lastSpoolId = activeSpoolId;
+          rememberSpoolForLocation(activeSpoolId, uidString);
         }
       }
 
@@ -1138,21 +1153,20 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, size_t bufferSize, Stri
         int locId = doc["location_id"].as<int>();
 
         // Check if a spool was scanned before
-        if (lastSpoolId.length() == 0 || lastSpoolId == "0") {
+        if ((lastSpoolId.length() == 0 || lastSpoolId == "0") && lastSpoolTagUuid.length() == 0) {
           Serial.println("No spool scanned before location tag - showing warning");
           oledShowProgressBar(1, 1, tr(STR_LOCATION), tr(STR_SCAN_SPOOL_FIRST));
           oledSetPriority(DISPLAY_PRIORITY_WARNING, 3000);
         } else {
           int sId = lastSpoolId.toInt();
-          sendLocationAsync(sId, "", locId, "");
+          sendLocationAsync(sId, lastSpoolTagUuid, locId, "");
 
           // Display feedback - location was set
           oledShowProgressBar(1, 1, tr(STR_LOCATION), tr(STR_LOCATION_SET));
           oledSetPriority(DISPLAY_PRIORITY_ACTION, 3000);
 
-          // Clear lastSpoolId to prevent accidental re-assignment
-          lastSpoolId = "";
-          Serial.println("Location set - lastSpoolId cleared to prevent re-assignment");
+          clearLastSpool();
+          Serial.println("Location set - spool context cleared to prevent re-assignment");
         }
 
         // Mark as processed so main.cpp doesn't try to send weight
@@ -1171,6 +1185,7 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, size_t bufferSize, Stri
         String displayText = brand.length() > 0 ? (brand + " " + type) : type;
         Serial.println("Extended-data tag: protocol=" + protocolStr + " type=" + type + " brand=" + brand);
         activeSpoolId = ""; // Keine spool_id/sm_id → Gewicht wird mit tag_uuid gesendet
+        rememberSpoolForLocation(activeSpoolId, uidString);
         if (scanRequestActive) {
             scanRequestActive = false;
             sendTagDataAsync(nfcJsonData);
@@ -1182,10 +1197,12 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, size_t bufferSize, Stri
       }
       else
       {
-        Serial.println("Unbekannter Tag-Inhalt.");
+        Serial.println("Unrecognized tag payload - resolving spool by UID");
         activeSpoolId = "";
-        oledShowProgressBar(1, 1, tr(STR_FAILURE), tr(STR_UNKNOWN_TAG));
-        oledSetPriority(DISPLAY_PRIORITY_WARNING, 2000);
+        // Weighing already resolves these tags by UID; locations must use the same identity.
+        rememberSpoolForLocation(activeSpoolId, uidString);
+        oledShowProgressBar(2, 4, tr(STR_SPOOL_TAG), tr(STR_WEIGHING));
+        oledSetPriority(DISPLAY_PRIORITY_ACTION, 2000);
       }
     } else {
       oledShowProgressBar(4, 4, tr(STR_FAILURE_EXCL), tr(STR_API_OFFLINE));
@@ -1634,6 +1651,7 @@ void scanRfidTask(void * parameter) {
       {
         // Set the current tag as not processed
         tagProcessed = false;
+        isBambuTag = false;
 
         // Wake display when a tag is detected
         oledResetActivityTimer();
@@ -1727,6 +1745,7 @@ void scanRfidTask(void * parameter) {
               oledShowProgressBar(1, 1, tr(STR_FAILURE), tr(STR_UNKNOWN_TAG));
               oledSetPriority(DISPLAY_PRIORITY_WARNING, 2000);
               nfcReaderState = NFC_READ_ERROR;
+              clearLastSpool();
             }
             else
             {
@@ -1745,6 +1764,7 @@ void scanRfidTask(void * parameter) {
                 oledSetPriority(DISPLAY_PRIORITY_WARNING, 2000);
                 nfcReaderState = NFC_READ_ERROR;
                 activeSpoolId = "";
+                clearLastSpool();
                 Serial.println("Tag read failed - activeSpoolId reset to prevent autoSet");
             }
           }
@@ -1792,6 +1812,7 @@ void scanRfidTask(void * parameter) {
               oledSetPriority(DISPLAY_PRIORITY_WARNING, 2000);
               Serial.println("This doesn't seem to be an NTAG2xx tag (UUID length != 7 bytes)!");
               activeSpoolId = "";
+              clearLastSpool();
               Serial.println("Unknown tag type - activeSpoolId reset to prevent autoSet");
             }
           }
