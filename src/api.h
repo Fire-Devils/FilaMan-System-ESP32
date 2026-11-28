@@ -19,7 +19,8 @@ typedef enum {
     API_REQUEST_LOCATE,
     API_REQUEST_RFID_RESULT,
     API_REQUEST_TAG_DATA,
-    API_REQUEST_SPOOL_FULL
+    API_REQUEST_SPOOL_FULL,
+    API_REQUEST_SPOOLMAN_PROXY
 } FilamanApiRequestType;
 
 extern volatile filamanApiStateType filamanApiState;
@@ -58,6 +59,12 @@ bool sendWeight(int spoolId, String tagUuid, float weight);
 bool sendSpoolFull(int spoolId, String tagUuid, float weight, bool confirmOverwrite);
 bool sendLocation(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid, String locationName = "");
 bool sendRfidResult(String tagUuid, int spoolId, int locationId, bool success, String errorMessage, float remainingWeight = 0);
+
+// Spoolman-Proxy fuer die Weboberflaeche (Browser darf Spoolman wegen CORS nicht direkt fragen).
+// what: "spools" | "filaments" | "locations" | "create" (filamentId, location, weight > 0 = Messung).
+// Ergebnis per Polling: spoolmanProxyResult() liefert 0 solange offen, sonst HTTP-Code + JSON in out.
+bool spoolmanProxyStart(const String& what, int filamentId, const String& location, float weight);
+int spoolmanProxyResult(String& out);
 
 // Helper functions
 void saveFilamanConfig();

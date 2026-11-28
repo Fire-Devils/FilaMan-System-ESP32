@@ -243,6 +243,27 @@ void setupWebserver(AsyncWebServer &server) {
         request->send(200, "application/json", "{\"success\": true}");
     });
 
+    // Spoolman-Proxy: Anfrage einreihen (202), Ergebnis per GET /api/spoolman/result abholen.
+    server.on("/api/spoolman/request", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+        JsonDocument doc;
+        if (deserializeJson(doc, (const uint8_t*)data, len)) {
+            request->send(400, "application/json", "{\"error\": \"Invalid JSON\"}");
+            return;
+        }
+        float w = (doc["use_scale_weight"] | false) ? (float)weight : 0.0f;
+        if (spoolmanProxyStart(doc["what"] | "", doc["filament_id"] | 0, doc["location"] | "", w)) {
+            request->send(202, "application/json", "{\"pending\": true}");
+        } else {
+            request->send(503, "application/json", "{\"error\": \"Spoolman not configured or queue full\"}");
+        }
+    });
+    server.on("/api/spoolman/result", HTTP_GET, [](AsyncWebServerRequest *request){
+        String body;
+        int code = spoolmanProxyResult(body);
+        if (code == 0) request->send(202, "application/json", "{\"pending\": true}");
+        else request->send(code, "application/json", body);
+    });
+
     server.on("/api/v1/rfid/write", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
         JsonDocument doc;
         DeserializationError error = deserializeJson(doc, (const uint8_t*)data, len);

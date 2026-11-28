@@ -55,6 +55,18 @@ static bool enqueueRequest(const ApiRequest& r) {
     return queued;
 }
 
+// Neuen, vollstaendig initialisierten Request anlegen.
+static ApiRequest makeRequest(FilamanApiRequestType type) {
+    ApiRequest r;
+    r.type = type;
+    r.id1 = 0;
+    r.id2 = 0;
+    r.val = 0.0f;
+    r.bool1 = false;
+    r.remainingWeight = 0.0f;
+    return r;
+}
+
 void saveFilamanConfig() {
     Preferences preferences;
     preferences.begin(NVS_NAMESPACE_API, false);
@@ -551,6 +563,117 @@ static bool spoolmanRfidResult(const String& uid, int spoolId, bool success) {
     return spoolmanHttp("PATCH", "/api/v1/spool/" + String(spoolId), payload) == 200;
 }
 
+// ---- Proxy fuer die Weboberflaeche ----
+// ponytail: ein Ergebnis-Slot, neuer Start verwirft das alte. Reicht, die Seite fragt nacheinander.
+static volatile uint32_t proxySeq = 0;
+static uint32_t proxyResultSeq = 0;
+static int proxyResultCode = 0;
+static String proxyResultBody;
+
+static void proxyStore(uint32_t seq, int code, String& body) {
+    if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+        if (seq == proxySeq) {
+            proxyResultSeq = seq;
+            proxyResultCode = code;
+            proxyResultBody = std::move(body);
+        }
+        xSemaphoreGive(queueMutex);
+    }
+}
+
+// Liste laden und per Filter auf die benoetigten Felder kuerzen, sonst sprengen grosse Inventare den Heap.
+// ponytail: komplette Liste im RAM (~150 Byte/Spule) - ok bis einige hundert Spulen, sonst paginieren.
+static int spoolmanFetchFiltered(const String& path, JsonDocument& filter, String& out) {
+    if (WiFi.status() != WL_CONNECTED) return -1;
+    HTTPClient http;
+    http.setTimeout(15000);
+    http.setReuse(false);
+    http.begin(spoolmanUrl + path);
+    int code = http.GET();
+    if (code == 200) {
+        JsonDocument doc;
+        if (deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter))) code = -2;
+        else serializeJson(doc, out);
+    }
+    http.end();
+    Serial.printf("Spoolman proxy GET %s -> %d (%u bytes)\n", path.c_str(), code, out.length());
+    return code;
+}
+
+static void spoolmanProxy(const ApiRequest& req) {
+    String out;
+    int code = 400;
+    const String& what = req.str1;
+    if (what == "spools") {
+        JsonDocument f;
+        f[0]["id"] = true;
+        f[0]["remaining_weight"] = true;
+        f[0]["location"] = true;
+        f[0]["extra"]["nfc_id"] = true;
+        f[0]["filament"]["name"] = true;
+        f[0]["filament"]["material"] = true;
+        f[0]["filament"]["color_hex"] = true;
+        f[0]["filament"]["vendor"]["name"] = true;
+        code = spoolmanFetchFiltered("/api/v1/spool", f, out);
+    } else if (what == "filaments") {
+        JsonDocument f;
+        f[0]["id"] = true;
+        f[0]["name"] = true;
+        f[0]["material"] = true;
+        f[0]["color_hex"] = true;
+        f[0]["weight"] = true;
+        f[0]["spool_weight"] = true;
+        f[0]["vendor"]["name"] = true;
+        code = spoolmanFetchFiltered("/api/v1/filament", f, out);
+    } else if (what == "locations") {
+        JsonDocument resp;
+        code = spoolmanHttp("GET", "/api/v1/location", "", &resp);
+        if (code == 200) serializeJson(resp, out);
+    } else if (what == "create" && req.id1 > 0) {
+        JsonDocument body;
+        body["filament_id"] = req.id1;
+        if (req.str2.length() > 0) body["location"] = req.str2;
+        String payload;
+        serializeJson(body, payload);
+        JsonDocument resp;
+        code = spoolmanHttp("POST", "/api/v1/spool", payload, &resp);
+        int id = resp["id"] | 0;
+        if (code == 200 && id > 0) {
+            // Aktuelles Gewicht auf der Waage als erste Messung (Brutto, Spoolman zieht das Leergewicht ab)
+            if (req.val > 0) spoolmanHttp("PUT", "/api/v1/spool/" + String(id) + "/measure", "{\"weight\":" + String(req.val, 1) + "}");
+            out = "{\"id\":" + String(id) + "}";
+        }
+    }
+    if (code <= 0) code = 502;
+    if (out.isEmpty()) out = "{\"error\":\"Spoolman request failed (" + String(code) + ")\"}";
+    proxyStore((uint32_t)req.id2, code, out);
+}
+
+bool spoolmanProxyStart(const String& what, int filamentId, const String& location, float weight) {
+    if (spoolmanUrl.isEmpty()) return false;
+    ApiRequest r = makeRequest(API_REQUEST_SPOOLMAN_PROXY);
+    r.str1 = what;
+    r.id1 = filamentId;
+    r.str2 = location;
+    r.val = weight;
+    r.id2 = (int)++proxySeq;
+    return enqueueRequest(r);
+}
+
+int spoolmanProxyResult(String& out) {
+    int code = 0;
+    if (xSemaphoreTake(queueMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        if (proxyResultSeq == proxySeq && proxyResultCode != 0) {
+            code = proxyResultCode;
+            out = std::move(proxyResultBody);
+            proxyResultCode = 0;
+            proxyResultBody = String();
+        }
+        xSemaphoreGive(queueMutex);
+    }
+    return code;
+}
+
 void filamanApiTask(void* pvParameters) {
     for (;;) {
         // Waehrend eines Firmware-Updates keine Queue-Requests (Berichte sendet der OTA-Task selbst).
@@ -604,6 +727,7 @@ void filamanApiTask(void* pvParameters) {
                 case API_REQUEST_LOCATE: sendLocation(req.id1, req.str1, req.id2, req.str2, req.str3); break;
                 case API_REQUEST_RFID_RESULT: sendRfidResult(req.str1, req.id1, req.id2, req.bool1, req.str3, req.remainingWeight); break;
                 case API_REQUEST_TAG_DATA: sendTagData(req.str1); break;
+                case API_REQUEST_SPOOLMAN_PROXY: spoolmanProxy(req); break;
                 default: break;
             }
             filamanApiState = API_IDLE;
@@ -612,17 +736,6 @@ void filamanApiTask(void* pvParameters) {
     }
 }
 
-// Neuen, vollstaendig initialisierten Request anlegen.
-static ApiRequest makeRequest(FilamanApiRequestType type) {
-    ApiRequest r;
-    r.type = type;
-    r.id1 = 0;
-    r.id2 = 0;
-    r.val = 0.0f;
-    r.bool1 = false;
-    r.remainingWeight = 0.0f;
-    return r;
-}
 
 // Reiht die Registrierung ein, statt sie im AsyncTCP-Kontext auszuführen.
 // str2 = FilaMan-URL, str1 = Device-Code.

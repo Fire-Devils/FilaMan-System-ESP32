@@ -54,6 +54,29 @@
             </div>
 
             <div class="fm-card">
+                <h2>New Spool</h2>
+                <div class="fm-form-group" style="margin-top: 1rem;">
+                    <label class="fm-label" for="filamentSelect">Filament</label>
+                    <select id="filamentSelect" class="fm-input"><option value="">Loading...</option></select>
+                </div>
+                <div class="fm-form-group">
+                    <label class="fm-label" for="newLocationInput">Location (optional)</label>
+                    <input type="text" id="newLocationInput" class="fm-input" list="locationList">
+                </div>
+                <div class="fm-form-group">
+                    <label class="fm-label" for="useScaleWeight">
+                        <input type="checkbox" id="useScaleWeight" checked> Use current weight on the scale (spool with filament)
+                    </label>
+                </div>
+                <div class="fm-form-group">
+                    <label class="fm-label" for="writeAfterCreate">
+                        <input type="checkbox" id="writeAfterCreate" checked> Write NFC tag right after creating
+                    </label>
+                </div>
+                <button id="createSpoolBtn" class="fm-btn fm-btn-primary">Create Spool</button>
+            </div>
+
+            <div class="fm-card">
                 <h2>Location Tag</h2>
                 <div class="fm-form-group" style="margin-top: 1rem;">
                     <label class="fm-label" for="locationInput">Location</label>
@@ -79,28 +102,75 @@
             document.querySelector('.version').textContent = 'v' + d.version;
         }).catch(() => {});
 
-        // Spoolman wird direkt vom Browser abgefragt (Spoolman erlaubt CORS), die Waage schreibt nur den Tag.
-        fetch('/api/config').then(r => r.json()).then(async cfg => {
-            const url = cfg.spoolmanUrl;
-            if (!url) { document.getElementById('noSpoolman').hidden = false; return; }
+        // Spoolman fragt die Waage ab (Proxy), weil Spoolman Browser-Anfragen per CORS blockt.
+        async function sm(body) {
+            const r = await fetch('/api/spoolman/request', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+            });
+            if (r.status !== 202) throw new Error((await r.json()).error || r.status);
+            for (let i = 0; i < 100; i++) {
+                await new Promise(res => setTimeout(res, 300));
+                const res = await fetch('/api/spoolman/result');
+                if (res.status === 202) continue;
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || data.detail || res.status);
+                return data;
+            }
+            throw new Error('Timeout');
+        }
+
+        const fillSelect = (id, items, label) => {
+            const sel = document.getElementById(id);
+            sel.innerHTML = '';
+            items.sort((a, b) => a.id - b.id).forEach(x => {
+                const o = document.createElement('option');
+                o.value = x.id;
+                o.textContent = label(x);
+                sel.appendChild(o);
+            });
+        };
+        const filamentLabel = f => `${f.vendor ? f.vendor.name + ' ' : ''}${f.name || ''} ${f.material || ''}`.trim();
+
+        async function loadSpools() {
+            const spools = await sm({ what: 'spools' });
+            fillSelect('spoolSelect', spools, s => `#${s.id} ${filamentLabel(s.filament || {})}` +
+                (s.remaining_weight != null ? ` (${Math.round(s.remaining_weight)} g)` : '') +
+                (s.extra && s.extra.nfc_id && s.extra.nfc_id !== '""' ? ' [tag]' : ''));
+        }
+
+        async function loadAll() {
+            const cfg = await (await fetch('/api/config')).json();
+            if (!cfg.spoolmanUrl) { document.getElementById('noSpoolman').hidden = false; return; }
             try {
-                const spools = await (await fetch(url + '/api/v1/spool')).json();
-                const sel = document.getElementById('spoolSelect');
-                sel.innerHTML = '';
-                spools.sort((a, b) => a.id - b.id).forEach(s => {
-                    const f = s.filament || {};
-                    const opt = document.createElement('option');
-                    opt.value = s.id;
-                    opt.textContent = `#${s.id} ${f.vendor ? f.vendor.name + ' ' : ''}${f.name || ''} ${f.material || ''}` +
-                        (s.remaining_weight != null ? ` (${Math.round(s.remaining_weight)} g)` : '');
-                    sel.appendChild(opt);
-                });
-                const locations = await (await fetch(url + '/api/v1/location')).json();
+                await loadSpools();
+                const filaments = await sm({ what: 'filaments' });
+                fillSelect('filamentSelect', filaments, f => `#${f.id} ${filamentLabel(f)}` + (f.weight ? ` ${f.weight} g` : ''));
+                const locations = await sm({ what: 'locations' });
                 const list = document.getElementById('locationList');
                 locations.forEach(l => { const o = document.createElement('option'); o.value = l; list.appendChild(o); });
             } catch (e) {
-                status('Could not load data from Spoolman (' + url + '). Spoolman blocks browser requests by default: ' +
-                    'set SPOOLMAN_CORS_ORIGIN=' + location.origin + ' in Spoolman and restart it. (' + e + ')', false);
+                status('Could not load data from Spoolman: ' + e.message, false);
+            }
+        }
+        loadAll();
+
+        document.getElementById('createSpoolBtn').addEventListener('click', async () => {
+            const filamentId = parseInt(document.getElementById('filamentSelect').value);
+            if (!filamentId) return status('Please select a filament.', false);
+            status('Creating spool...');
+            try {
+                const res = await sm({
+                    what: 'create',
+                    filament_id: filamentId,
+                    location: document.getElementById('newLocationInput').value.trim(),
+                    use_scale_weight: document.getElementById('useScaleWeight').checked
+                });
+                status(`Spool #${res.id} created.`, true);
+                await loadSpools();
+                document.getElementById('spoolSelect').value = res.id;
+                if (document.getElementById('writeAfterCreate').checked) writeTag({ sm_id: String(res.id) });
+            } catch (e) {
+                status('Creating spool failed: ' + e.message, false);
             }
         });
 
