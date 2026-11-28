@@ -1,5 +1,7 @@
 # FilaMan - Filament Management System
 
+> **This fork adds Spoolman support back.** Upstream ([Fire-Devils/FilaMan-System-ESP32](https://github.com/Fire-Devils/FilaMan-System-ESP32)) only talks to the FilaMan-System. This fork keeps all upstream features and lets you use [Spoolman](https://github.com/Donkie/Spoolman) as backend instead, including tags readable by the Snapmaker U1 extended firmware. See [Spoolman mode](#spoolman-mode-fork).
+
 ⚠️ **Important: Starting with v3.0.0, this system requires the [FilaMan-System](https://github.com/Fire-Devils/filaman-system) backend. Previous direct integrations (Spoolman, MQTT, Bambu Lab) have been moved to the central FilaMan-System.**
 
 FilaMan is a filament management tool for 3D printing. It uses ESP32 hardware for weight measurement and NFC tag management.
@@ -197,6 +199,40 @@ A+ green*
     - Connect to the "FilaMan" WiFi access point.
     - Configure WiFi settings through the captive portal.
     - Access the web interface at `http://filaman.local` or the IP address.
+
+## Spoolman mode (fork)
+
+Set a Spoolman URL on the device's **Setup** page (card "Spoolman", e.g. `http://192.168.1.10:7912`). As long as the URL is set, the scale talks to Spoolman instead of the FilaMan-System; clear it to switch back. Use **Remove Registration** to drop an old FilaMan registration, otherwise the scale keeps reporting "API connection lost".
+
+| Scale action | Spoolman call |
+|---|---|
+| Weigh a spool with a tag | `PUT /api/v1/spool/{id}/measure` (gross weight, Spoolman subtracts the spool weight) |
+| Tag without spool ID | spool is looked up by UID in the extra fields `nfc_id` / `card_uids` |
+| Location tag after a spool tag | `PATCH` spool `location` |
+| Long press "spool full" | `spool_weight` = weight - initial weight, `used_weight` = 0 |
+| Tag written | UID stored in `nfc_id` and `card_uids` |
+
+The extra fields `nfc_id` and `card_uids` are created automatically on the first connection. In the Spoolman UI they show up as "NFC ID" and "Card UIDs" on the spool page.
+
+### Spoolman page on the scale (`/spoolman`)
+
+- **Spool Tag:** search spools and group them by vendor or material, then write a tag.
+- **New Spool:** create a spool from an existing filament, optionally with the current weight on the scale as first measurement, and write its tag right away.
+- **Location Tag:** write a tag with a location name.
+
+All Spoolman requests go through the scale, so Spoolman needs no CORS setting (works with the Spoolman Home Assistant add-on).
+
+### Tag format and Snapmaker U1
+
+Spool tags are NTAG213/215/216 with one NDEF record of type `application/json`. The payload is kept within 120 bytes so it fits on NTAG213:
+
+```json
+{"spool_id":"27","protocol":"openspool","version":"1.0","type":"PLA","color_hex":"#1A1A1A","brand":"Polymaker"}
+```
+
+The [Snapmaker U1 extended firmware](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware/blob/v2.0.0-paxx12-24/docs/nfc_spoolman_setup.md) finds the spool by its UID in `card_uids` (uppercase hex, no separators, comma separated). Material and color on the tag are a fallback (OpenSpool). Tags from FilaMan v2 (`sm_id`, `location`) are still read.
+
+Limits: a UID is not removed from other spools when a tag is reused, clean up `card_uids` in Spoolman in that case. Server OTA is off in Spoolman mode, update via the `/upgrade` page.
 
 ## Updates over WiFi (OTA)
 

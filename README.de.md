@@ -1,5 +1,7 @@
 # FilaMan - Filament Management System
 
+> **Dieser Fork bringt die Spoolman-Unterstützung zurück.** Upstream ([Fire-Devils/FilaMan-System-ESP32](https://github.com/Fire-Devils/FilaMan-System-ESP32)) spricht nur noch mit dem FilaMan-System. Dieser Fork behält alle Upstream-Funktionen und kann stattdessen [Spoolman](https://github.com/Donkie/Spoolman) als Backend nutzen, inklusive Tags, die die Snapmaker U1 Extended Firmware lesen kann. Siehe [Spoolman-Modus](#spoolman-modus-fork).
+
 ⚠️ **Wichtig: Ab Version 3.0.0 erfordert dieses System das [FilaMan-System](https://github.com/Fire-Devils/filaman-system) Backend. Frühere direkte Integrationen (Spoolman, MQTT, Bambu Lab) wurden in das zentrale FilaMan-System verschoben.**
 
 FilaMan ist ein Werkzeug zur Filamentverwaltung für den 3D-Druck. Es verwendet ESP32-Hardware zur Gewichtsmessung und Verwaltung von NFC-Tags.
@@ -197,6 +199,40 @@ A+ grün*
     - Verbinden Sie sich mit dem "FilaMan" WiFi-Access-Point.
     - Konfigurieren Sie die WiFi-Einstellungen über das Captive Portal.
     - Greifen Sie über `http://filaman.local` oder die IP-Adresse auf die Weboberfläche zu.
+
+## Spoolman-Modus (Fork)
+
+Auf der **Setup**-Seite des Geräts eine Spoolman-URL eintragen (Karte „Spoolman“, z. B. `http://192.168.1.10:7912`). Solange die URL gesetzt ist, spricht die Waage mit Spoolman statt mit dem FilaMan-System; leeren schaltet zurück. **Remove Registration** entfernt eine alte FilaMan-Registrierung, sonst meldet die Waage weiter „API connection lost“.
+
+| Aktion an der Waage | Spoolman-Aufruf |
+|---|---|
+| Spule mit Tag wiegen | `PUT /api/v1/spool/{id}/measure` (Bruttogewicht, Spoolman zieht das Leergewicht ab) |
+| Tag ohne Spulen-ID | Suche über die UID in den Extra-Feldern `nfc_id` / `card_uids` |
+| Location-Tag nach Spulen-Tag | `PATCH` der Spule, Feld `location` |
+| Langdruck „Spule voll“ | `spool_weight` = Gewicht - Startgewicht, `used_weight` = 0 |
+| Tag geschrieben | UID in `nfc_id` und `card_uids` |
+
+Die Extra-Felder `nfc_id` und `card_uids` legt die Waage beim ersten Kontakt an. In Spoolman erscheinen sie auf der Spulenseite als „NFC ID“ und „Card UIDs“.
+
+### Spoolman-Seite auf der Waage (`/spoolman`)
+
+- **Spool Tag:** Spulen suchen, nach Hersteller oder Material gruppieren, Tag schreiben.
+- **New Spool:** Spule zu einem vorhandenen Filament anlegen, optional mit dem aktuellen Gewicht als erste Messung, und gleich den Tag schreiben.
+- **Location Tag:** Tag mit einem Ortsnamen schreiben.
+
+Alle Anfragen an Spoolman laufen über die Waage, Spoolman braucht also keine CORS-Einstellung (funktioniert mit dem Spoolman-Add-on für Home Assistant).
+
+### Tag-Format und Snapmaker U1
+
+Spulen-Tags sind NTAG213/215/216 mit einem NDEF-Record vom Typ `application/json`. Der Inhalt bleibt unter 120 Byte und passt damit auf NTAG213:
+
+```json
+{"spool_id":"27","protocol":"openspool","version":"1.0","type":"PLA","color_hex":"#1A1A1A","brand":"Polymaker"}
+```
+
+Die [Snapmaker U1 Extended Firmware](https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware/blob/v2.0.0-paxx12-24/docs/nfc_spoolman_setup.md) findet die Spule über die UID in `card_uids` (Großbuchstaben, ohne Trenner, kommagetrennt). Material und Farbe auf dem Tag sind ein Fallback (OpenSpool). Tags aus FilaMan v2 (`sm_id`, `location`) werden weiter gelesen.
+
+Grenzen: Wird ein Tag wiederverwendet, bleibt die UID an der alten Spule stehen, dann `card_uids` in Spoolman aufräumen. Server-OTA ist im Spoolman-Modus aus, Updates über die Seite `/upgrade`.
 
 ## Updates per WLAN (OTA)
 
