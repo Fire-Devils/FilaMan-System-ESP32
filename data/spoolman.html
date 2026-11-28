@@ -6,6 +6,28 @@
     <title>FilaMan - Spoolman Tags</title>
     <link rel="icon" type="image/png" href="/favicon.ico">
     <link rel="stylesheet" href="style.css">
+    <style>
+        .picker-tools { display: flex; gap: 0.75rem; flex-wrap: wrap; margin: 1rem 0 0.75rem; }
+        .picker-tools .fm-input { flex: 1 1 220px; margin: 0; }
+        .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-pill); overflow: hidden; }
+        .seg button { background: transparent; color: var(--text-muted); border: 0; padding: 0.5rem 0.9rem; cursor: pointer; font: inherit; }
+        .seg button.on { background: var(--accent); color: var(--bg); font-weight: 600; }
+        .picker-list { max-height: 360px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); }
+        .picker-group summary { position: sticky; top: 0; background: var(--bg-elevated); padding: 0.45rem 0.75rem; cursor: pointer;
+            font-size: 0.85rem; font-weight: 600; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+        .picker-group summary span { opacity: 0.7; font-weight: 400; margin-left: 0.35rem; }
+        .picker-item { display: flex; align-items: center; gap: 0.75rem; width: 100%; padding: 0.55rem 0.75rem; text-align: left;
+            background: transparent; color: var(--text); border: 0; border-bottom: 1px solid var(--border); cursor: pointer; font: inherit; }
+        .picker-item:hover { background: var(--bg-elevated); }
+        .picker-item.sel { background: var(--bg-elevated); box-shadow: inset 3px 0 0 var(--accent); }
+        .swatch { width: 22px; height: 22px; border-radius: 50%; flex: none; border: 1px solid var(--border); }
+        .picker-main { flex: 1; min-width: 0; }
+        .picker-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .picker-sub { font-size: 0.8rem; color: var(--text-muted); }
+        .badge { font-size: 0.7rem; padding: 0.1rem 0.5rem; border-radius: var(--radius-pill); border: 1px solid var(--accent); color: var(--accent); flex: none; }
+        .picker-empty { padding: 1rem; color: var(--text-muted); }
+        .picker-selected { margin: 0.75rem 0; font-size: 0.9rem; color: var(--text-muted); }
+    </style>
 </head>
 <body>
     <div class="fm-page">
@@ -46,19 +68,14 @@
 
             <div class="fm-card">
                 <h2>Spool Tag</h2>
-                <div class="fm-form-group" style="margin-top: 1rem;">
-                    <label class="fm-label" for="spoolSelect">Spool</label>
-                    <select id="spoolSelect" class="fm-input"><option value="">Loading...</option></select>
-                </div>
+                <div id="spoolPicker"></div>
                 <button id="writeSpoolBtn" class="fm-btn fm-btn-primary">Write Spool Tag</button>
+                <p style="font-size: 0.8rem; margin-top: 0.5rem;">Writes an OpenSpool tag (material, color, temperatures) with the Spoolman ID and stores the tag UID in Spoolman (<code>card_uids</code>), so the Snapmaker U1 extended firmware finds the spool. Use NTAG215/216.</p>
             </div>
 
             <div class="fm-card">
                 <h2>New Spool</h2>
-                <div class="fm-form-group" style="margin-top: 1rem;">
-                    <label class="fm-label" for="filamentSelect">Filament</label>
-                    <select id="filamentSelect" class="fm-input"><option value="">Loading...</option></select>
-                </div>
+                <div id="filamentPicker"></div>
                 <div class="fm-form-group">
                     <label class="fm-label" for="newLocationInput">Location (optional)</label>
                     <input type="text" id="newLocationInput" class="fm-input" list="locationList">
@@ -96,6 +113,7 @@
             const el = document.getElementById('statusMessage');
             el.textContent = text;
             el.style.color = ok === undefined ? 'var(--text-muted)' : (ok ? 'var(--success-text)' : 'var(--error-text)');
+            el.scrollIntoView({ block: 'nearest' });
         };
 
         fetch('/api/version').then(r => r.json()).then(d => {
@@ -119,32 +137,135 @@
             throw new Error('Timeout');
         }
 
-        const fillSelect = (id, items, label) => {
-            const sel = document.getElementById(id);
-            sel.innerHTML = '';
-            items.sort((a, b) => a.id - b.id).forEach(x => {
-                const o = document.createElement('option');
-                o.value = x.id;
-                o.textContent = label(x);
-                sel.appendChild(o);
-            });
+        const store = {
+            get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+            set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
         };
-        const filamentLabel = f => `${f.vendor ? f.vendor.name + ' ' : ''}${f.name || ''} ${f.material || ''}`.trim();
+
+        // Liste mit Suche und Gruppierung (Alle / Hersteller / Material).
+        // getFil: liefert das Filament-Objekt eines Eintrags (Spule -> s.filament, Filament -> f selbst).
+        function makePicker(rootId, { getFil, sub, badge }) {
+            const root = document.getElementById(rootId);
+            root.innerHTML = `
+                <div class="picker-tools">
+                    <input type="search" class="fm-input" placeholder="Search name, vendor, material, color, ID...">
+                    <div class="seg"><button data-m="all">All</button><button data-m="vendor">Vendor</button><button data-m="material">Material</button></div>
+                </div>
+                <div class="picker-list"><div class="picker-empty">Loading...</div></div>
+                <div class="picker-selected">Nothing selected</div>`;
+            const search = root.querySelector('input');
+            const list = root.querySelector('.picker-list');
+            const selInfo = root.querySelector('.picker-selected');
+            const modeKey = 'picker-mode-' + rootId;
+            const p = { items: [], selected: null, mode: store.get(modeKey) || 'all' };
+
+            const vendorOf = x => (getFil(x).vendor || {}).name || 'Unknown vendor';
+            const materialOf = x => getFil(x).material || 'Unknown material';
+            const title = x => `#${x.id} ${getFil(x).name || ''}`.trim();
+            const text = x => [x.id, getFil(x).name, vendorOf(x), materialOf(x), getFil(x).color_hex, x.location].join(' ').toLowerCase();
+
+            function row(x) {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'picker-item' + (p.selected && p.selected.id === x.id ? ' sel' : '');
+                const sw = document.createElement('span');
+                sw.className = 'swatch';
+                sw.style.background = '#' + (getFil(x).color_hex || '888888').slice(0, 6);
+                const main = document.createElement('span');
+                main.className = 'picker-main';
+                const t = document.createElement('div'); t.className = 'picker-title'; t.textContent = title(x);
+                const s = document.createElement('div'); s.className = 'picker-sub'; s.textContent = sub(x, vendorOf(x), materialOf(x));
+                main.append(t, s);
+                b.append(sw, main);
+                if (badge && badge(x)) { const bd = document.createElement('span'); bd.className = 'badge'; bd.textContent = badge(x); b.append(bd); }
+                b.onclick = () => { p.selected = x; render(); };
+                return b;
+            }
+
+            function render() {
+                root.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.dataset.m === p.mode));
+                const q = search.value.trim().toLowerCase();
+                const items = p.items.filter(x => !q || q.split(/\s+/).every(w => text(x).includes(w)));
+                list.innerHTML = '';
+                if (!items.length) list.innerHTML = '<div class="picker-empty">No matches</div>';
+                if (p.mode === 'all') {
+                    items.forEach(x => list.append(row(x)));
+                } else {
+                    const keyOf = p.mode === 'vendor' ? vendorOf : materialOf;
+                    const groups = {};
+                    items.forEach(x => (groups[keyOf(x)] = groups[keyOf(x)] || []).push(x));
+                    Object.keys(groups).sort((a, b) => a.localeCompare(b)).forEach(k => {
+                        const d = document.createElement('details');
+                        d.className = 'picker-group';
+                        d.open = true;
+                        const s = document.createElement('summary');
+                        s.textContent = k;
+                        const c = document.createElement('span'); c.textContent = `(${groups[k].length})`;
+                        s.append(c);
+                        d.append(s);
+                        groups[k].forEach(x => d.append(row(x)));
+                        list.append(d);
+                    });
+                }
+                selInfo.textContent = p.selected ? 'Selected: ' + title(p.selected) + ' · ' + vendorOf(p.selected) + ' · ' + materialOf(p.selected) : 'Nothing selected';
+            }
+
+            search.addEventListener('input', render);
+            root.querySelectorAll('.seg button').forEach(b => b.onclick = () => { p.mode = b.dataset.m; store.set(modeKey, p.mode); render(); });
+
+            return {
+                setItems(items) { p.items = items.sort((a, b) => a.id - b.id); if (p.selected) p.selected = p.items.find(x => x.id === p.selected.id) || null; render(); },
+                select(id) { p.selected = p.items.find(x => x.id === id) || null; render(); },
+                get selected() { return p.selected; },
+                error(msg) { list.innerHTML = ''; const e = document.createElement('div'); e.className = 'picker-empty'; e.textContent = msg; list.append(e); }
+            };
+        }
+
+        const hasTag = s => s.extra && ((s.extra.card_uids && s.extra.card_uids !== '""') || (s.extra.nfc_id && s.extra.nfc_id !== '""'));
+        const spoolPicker = makePicker('spoolPicker', {
+            getFil: s => s.filament || {},
+            sub: (s, v, m) => [v, m, s.remaining_weight != null ? Math.round(s.remaining_weight) + ' g left' : null, s.location].filter(Boolean).join(' · '),
+            badge: s => hasTag(s) ? 'tag' : ''
+        });
+        const filamentPicker = makePicker('filamentPicker', {
+            getFil: f => f,
+            sub: (f, v, m) => [v, m, f.weight ? f.weight + ' g' : null].filter(Boolean).join(' · ')
+        });
+
+        // OpenSpool-Tag (vom Snapmaker U1 Extended Firmware lesbar) plus Spoolman-ID fuer die Waage.
+        function tagPayload(s) {
+            const f = s.filament || {};
+            const p = {
+                sm_id: String(s.id),
+                protocol: 'openspool',
+                version: '1.0',
+                type: f.material || 'PLA',
+                color_hex: '#' + (f.color_hex || 'FFFFFF').slice(0, 6).toUpperCase()
+            };
+            if (f.vendor && f.vendor.name) p.brand = f.vendor.name;
+            // Spoolman kennt nur einen Wert, OpenSpool einen Bereich
+            if (f.settings_extruder_temp) { p.min_temp = f.settings_extruder_temp; p.max_temp = f.settings_extruder_temp; }
+            if (f.settings_bed_temp) { p.bed_min_temp = f.settings_bed_temp; p.bed_max_temp = f.settings_bed_temp; }
+            if (s.initial_weight) p.weight = Math.round(s.initial_weight);
+            if (f.diameter) p.diameter = f.diameter;
+            return p;
+        }
 
         async function loadSpools() {
-            const spools = await sm({ what: 'spools' });
-            fillSelect('spoolSelect', spools, s => `#${s.id} ${filamentLabel(s.filament || {})}` +
-                (s.remaining_weight != null ? ` (${Math.round(s.remaining_weight)} g)` : '') +
-                (s.extra && s.extra.nfc_id && s.extra.nfc_id !== '""' ? ' [tag]' : ''));
+            spoolPicker.setItems(await sm({ what: 'spools' }));
         }
 
         async function loadAll() {
             const cfg = await (await fetch('/api/config')).json();
-            if (!cfg.spoolmanUrl) { document.getElementById('noSpoolman').hidden = false; return; }
+            if (!cfg.spoolmanUrl) {
+                document.getElementById('noSpoolman').hidden = false;
+                spoolPicker.error('No Spoolman URL set');
+                filamentPicker.error('No Spoolman URL set');
+                return;
+            }
             try {
                 await loadSpools();
-                const filaments = await sm({ what: 'filaments' });
-                fillSelect('filamentSelect', filaments, f => `#${f.id} ${filamentLabel(f)}` + (f.weight ? ` ${f.weight} g` : ''));
+                filamentPicker.setItems(await sm({ what: 'filaments' }));
                 const locations = await sm({ what: 'locations' });
                 const list = document.getElementById('locationList');
                 locations.forEach(l => { const o = document.createElement('option'); o.value = l; list.appendChild(o); });
@@ -153,26 +274,6 @@
             }
         }
         loadAll();
-
-        document.getElementById('createSpoolBtn').addEventListener('click', async () => {
-            const filamentId = parseInt(document.getElementById('filamentSelect').value);
-            if (!filamentId) return status('Please select a filament.', false);
-            status('Creating spool...');
-            try {
-                const res = await sm({
-                    what: 'create',
-                    filament_id: filamentId,
-                    location: document.getElementById('newLocationInput').value.trim(),
-                    use_scale_weight: document.getElementById('useScaleWeight').checked
-                });
-                status(`Spool #${res.id} created.`, true);
-                await loadSpools();
-                document.getElementById('spoolSelect').value = res.id;
-                if (document.getElementById('writeAfterCreate').checked) writeTag({ sm_id: String(res.id) });
-            } catch (e) {
-                status('Creating spool failed: ' + e.message, false);
-            }
-        });
 
         function writeTag(payload) {
             status('Place the tag on the scale...');
@@ -187,9 +288,29 @@
         }
 
         document.getElementById('writeSpoolBtn').addEventListener('click', () => {
-            const id = document.getElementById('spoolSelect').value;
-            if (!id) return status('Please select a spool.', false);
-            writeTag({ sm_id: String(id) });
+            const s = spoolPicker.selected;
+            if (!s) return status('Please select a spool.', false);
+            writeTag(tagPayload(s));
+        });
+
+        document.getElementById('createSpoolBtn').addEventListener('click', async () => {
+            const f = filamentPicker.selected;
+            if (!f) return status('Please select a filament.', false);
+            status('Creating spool...');
+            try {
+                const res = await sm({
+                    what: 'create',
+                    filament_id: f.id,
+                    location: document.getElementById('newLocationInput').value.trim(),
+                    use_scale_weight: document.getElementById('useScaleWeight').checked
+                });
+                status(`Spool #${res.id} created.`, true);
+                await loadSpools();
+                spoolPicker.select(res.id);
+                if (document.getElementById('writeAfterCreate').checked && spoolPicker.selected) writeTag(tagPayload(spoolPicker.selected));
+            } catch (e) {
+                status('Creating spool failed: ' + e.message, false);
+            }
         });
 
         document.getElementById('writeLocationBtn').addEventListener('click', () => {

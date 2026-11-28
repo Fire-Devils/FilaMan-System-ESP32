@@ -423,17 +423,23 @@ static int spoolmanHttp(const char* method, const String& path, const String& bo
     return code;
 }
 
-// Extra-Feld fuer die Tag-UID einmalig anlegen (wie FilaMan v2). Werte von Extra-Feldern sind JSON-kodiert.
+// Extra-Felder fuer Tag-UIDs einmalig anlegen. Werte von Extra-Feldern sind JSON-kodiert.
+//  nfc_id    : UID wie die Waage sie liest ("04:a1:..."), kompatibel zu FilaMan v2
+//  card_uids : UIDs fuer Snapmaker U1 Extended Firmware / Moonraker spoollink ("04A1...", kommagetrennt)
 static bool spoolmanNfcFieldReady = false;
 static void spoolmanEnsureNfcField() {
     if (spoolmanNfcFieldReady) return;
     JsonDocument fields;
     if (spoolmanHttp("GET", "/api/v1/field/spool", "", &fields) != 200) return;
+    bool hasNfc = false, hasCards = false;
     for (JsonObject f : fields.as<JsonArray>()) {
-        if (f["key"] == "nfc_id") { spoolmanNfcFieldReady = true; return; }
+        if (f["key"] == "nfc_id") hasNfc = true;
+        if (f["key"] == "card_uids") hasCards = true;
     }
-    int code = spoolmanHttp("POST", "/api/v1/field/spool/nfc_id", "{\"name\":\"NFC ID\",\"field_type\":\"text\"}");
-    spoolmanNfcFieldReady = (code == 200);
+    bool ok = true;
+    if (!hasNfc) ok &= spoolmanHttp("POST", "/api/v1/field/spool/nfc_id", "{\"name\":\"NFC ID\",\"field_type\":\"text\"}") == 200;
+    if (!hasCards) ok &= spoolmanHttp("POST", "/api/v1/field/spool/card_uids", "{\"name\":\"Card UIDs\",\"field_type\":\"text\",\"order\":1,\"default_value\":\"\\\"\\\"\"}") == 200;
+    spoolmanNfcFieldReady = ok;
 }
 
 // Spule ueber extra.nfc_id suchen. 0 = nicht gefunden.
@@ -450,12 +456,21 @@ static int spoolmanFindSpoolByUid(const String& uid) {
         JsonDocument filter;
         filter[0]["id"] = true;
         filter[0]["extra"]["nfc_id"] = true;
+        filter[0]["extra"]["card_uids"] = true;
         JsonDocument doc;
         if (!deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter))) {
             String want = "\"" + uid + "\"";
+            String card = uid;               // U1-Format: Grossbuchstaben ohne Trenner
+            card.replace(":", "");
+            card.toUpperCase();
+            card = "," + card + ",";
             for (JsonObject sp : doc.as<JsonArray>()) {
                 const char* v = sp["extra"]["nfc_id"] | "";
-                if (want.equalsIgnoreCase(v)) { found = sp["id"] | 0; break; }
+                String cards = sp["extra"]["card_uids"] | "";
+                cards.replace("\"", "");
+                cards.replace(" ", "");
+                cards.toUpperCase();
+                if (want.equalsIgnoreCase(v) || ("," + cards + ",").indexOf(card) >= 0) { found = sp["id"] | 0; break; }
             }
         }
     }
@@ -556,8 +571,21 @@ static bool spoolmanLocation(int spoolId, const String& uid, int locationId, con
 static bool spoolmanRfidResult(const String& uid, int spoolId, bool success) {
     if (!success || spoolId <= 0 || uid.isEmpty()) return false;
     spoolmanEnsureNfcField();
+    // card_uids im U1-Format ergaenzen (Grossbuchstaben, ohne Trenner), vorhandene UIDs behalten
+    String card = uid;
+    card.replace(":", "");
+    card.toUpperCase();
+    JsonDocument sp;
+    String cards;
+    if (spoolmanHttp("GET", "/api/v1/spool/" + String(spoolId), "", &sp) == 200) {
+        JsonDocument old;
+        if (!deserializeJson(old, sp["extra"]["card_uids"] | "\"\"")) cards = old.as<String>();
+    }
+    if (("," + cards + ",").indexOf("," + card + ",") < 0) cards = cards.isEmpty() ? card : cards + "," + card;
+    // ponytail: UID wird nicht bei anderen Spulen entfernt - bei wiederverwendeten Tags in Spoolman aufraeumen
     JsonDocument body;
     body["extra"]["nfc_id"] = "\"" + uid + "\"";
+    body["extra"]["card_uids"] = "\"" + cards + "\"";
     String payload;
     serializeJson(body, payload);
     return spoolmanHttp("PATCH", "/api/v1/spool/" + String(spoolId), payload) == 200;
@@ -614,6 +642,10 @@ static void spoolmanProxy(const ApiRequest& req) {
         f[0]["filament"]["material"] = true;
         f[0]["filament"]["color_hex"] = true;
         f[0]["filament"]["vendor"]["name"] = true;
+        f[0]["filament"]["settings_extruder_temp"] = true;
+        f[0]["filament"]["settings_bed_temp"] = true;
+        f[0]["filament"]["diameter"] = true;
+        f[0]["initial_weight"] = true;
         code = spoolmanFetchFiltered("/api/v1/spool", f, out);
     } else if (what == "filaments") {
         JsonDocument f;
