@@ -70,7 +70,7 @@
                 <h2>Spool Tag</h2>
                 <div id="spoolPicker"></div>
                 <button id="writeSpoolBtn" class="fm-btn fm-btn-primary">Write Spool Tag</button>
-                <p style="font-size: 0.8rem; margin-top: 0.5rem;">Writes an OpenSpool tag (material, color, temperatures) with the Spoolman ID and stores the tag UID in Spoolman (<code>card_uids</code>), so the Snapmaker U1 extended firmware finds the spool. Use NTAG215/216.</p>
+                <p style="font-size: 0.8rem; margin-top: 0.5rem;">Writes a small OpenSpool tag (Spoolman ID, material, color, vendor) that fits NTAG213, and stores the tag UID in Spoolman (<code>card_uids</code>), so the Snapmaker U1 extended firmware finds the spool.</p>
             </div>
 
             <div class="fm-card">
@@ -232,22 +232,25 @@
             sub: (f, v, m) => [v, m, f.weight ? f.weight + ' g' : null].filter(Boolean).join(' · ')
         });
 
-        // OpenSpool-Tag (vom Snapmaker U1 Extended Firmware lesbar) plus Spoolman-ID fuer die Waage.
+        // Minimaler OpenSpool-Tag: der U1 findet die Spule ueber die UID (card_uids in Spoolman),
+        // Material/Farbe/Hersteller stehen nur als Fallback auf dem Tag. Muss auf NTAG213 passen:
+        // 144 Byte minus ~22 Byte NDEF/TLV-Overhead -> max. 120 Byte JSON.
+        const TAG_MAX_JSON = 120;
         function tagPayload(s) {
             const f = s.filament || {};
             const p = {
-                sm_id: String(s.id),
+                spool_id: String(s.id),
                 protocol: 'openspool',
                 version: '1.0',
-                type: f.material || 'PLA',
+                type: (f.material || 'PLA').slice(0, 12),
                 color_hex: '#' + (f.color_hex || 'FFFFFF').slice(0, 6).toUpperCase()
             };
-            if (f.vendor && f.vendor.name) p.brand = f.vendor.name;
-            // Spoolman kennt nur einen Wert, OpenSpool einen Bereich
-            if (f.settings_extruder_temp) { p.min_temp = f.settings_extruder_temp; p.max_temp = f.settings_extruder_temp; }
-            if (f.settings_bed_temp) { p.bed_min_temp = f.settings_bed_temp; p.bed_max_temp = f.settings_bed_temp; }
-            if (s.initial_weight) p.weight = Math.round(s.initial_weight);
-            if (f.diameter) p.diameter = f.diameter;
+            const brand = f.vendor && f.vendor.name;
+            if (brand) {
+                // Hersteller kuerzen bis es passt, sonst weglassen
+                const free = TAG_MAX_JSON - JSON.stringify(p).length - ',"brand":""'.length;
+                if (free >= 3) p.brand = brand.slice(0, free);
+            }
             return p;
         }
 
