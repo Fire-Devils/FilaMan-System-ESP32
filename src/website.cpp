@@ -227,7 +227,8 @@ void setupWebserver(AsyncWebServer &server) {
     });
 
     // Spoolman-Modus: URL setzen (leer = zurueck zu FilaMan). Verbindung prueft der API-Task per Heartbeat.
-    server.on("/api/spoolman", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+    // Achtung: kein Pfad, der Praefix eines anderen ist - ESPAsyncWebServer matcht "/x" auch fuer "/x/...".
+    server.on("/api/spoolman-url", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
         JsonDocument doc;
         if (deserializeJson(doc, (const uint8_t*)data, len)) {
             request->send(400, "application/json", "{\"success\": false, \"error\": \"Invalid JSON\"}");
@@ -240,6 +241,17 @@ void setupWebserver(AsyncWebServer &server) {
         filamanConnected = false;
         saveFilamanConfig();
         sendHeartbeatAsync();
+        request->send(200, "application/json", "{\"success\": true}");
+    });
+
+    // FilaMan-Registrierung entfernen: danach keine Calls und keine Verbindungsfehler mehr vom FilaMan-Server.
+    server.on("/api/filaman-reset", HTTP_POST, [](AsyncWebServerRequest *request){
+        filamanUrl = "";
+        filamanToken = "";
+        filamanRegistered = false;
+        filamanConnected = false;
+        saveFilamanConfig();
+        if (!spoolmanUrl.isEmpty()) sendHeartbeatAsync();
         request->send(200, "application/json", "{\"success\": true}");
     });
 

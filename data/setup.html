@@ -56,6 +56,7 @@
                 </div>
                 
                 <button id="registerBtn" class="fm-btn fm-btn-primary">Register Device</button>
+                <button id="filamanResetBtn" class="fm-btn fm-btn-outline">Remove Registration</button>
                 <div id="statusMessage" style="margin-top: 1.5rem;"></div>
             </div>
 
@@ -316,7 +317,7 @@
 
         document.getElementById('spoolmanBtn').addEventListener('click', () => {
             const msg = document.getElementById('spoolmanStatusMessage');
-            fetch('/api/spoolman', {
+            fetch('/api/spoolman-url', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url: document.getElementById('spoolmanUrl').value.trim() })
@@ -327,6 +328,13 @@
                 msg.style.color = data.success ? 'var(--success-text)' : 'var(--error-text)';
             })
             .catch(() => { msg.textContent = 'Error saving setting.'; msg.style.color = 'var(--error-text)'; });
+        });
+
+        document.getElementById('filamanResetBtn').addEventListener('click', () => {
+            if (!confirm('Remove the FilaMan registration? The scale stops talking to the FilaMan server.')) return;
+            fetch('/api/filaman-reset', { method: 'POST' })
+                .then(() => location.reload())
+                .catch(() => alert('Error removing registration.'));
         });
 
         document.getElementById('registerBtn').addEventListener('click', () => {
