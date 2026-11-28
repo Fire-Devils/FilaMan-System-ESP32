@@ -295,10 +295,9 @@ void setupWebserver(AsyncWebServer &server) {
         serializeJson(doc, payloadString);
 
         bool hasSpoolId = !doc["spool_id"].isNull() || !doc["sm_id"].isNull();
-        int spoolId = doc["spool_id"] | 0;
-        if (spoolId == 0 && doc["sm_id"].is<String>()) {
-            spoolId = doc["sm_id"].as<String>().toInt();
-        }
+        // spool_id/sm_id kommen als Zahl oder als Text ("27") - beides akzeptieren
+        int spoolId = doc["spool_id"].is<int>() ? doc["spool_id"].as<int>() : doc["spool_id"].as<String>().toInt();
+        if (spoolId == 0) spoolId = doc["sm_id"].is<int>() ? doc["sm_id"].as<int>() : doc["sm_id"].as<String>().toInt();
         int locationId = doc["location_id"] | 0;
 
         startWriteJsonToTag(hasSpoolId, payloadString.c_str(), spoolId, locationId);
