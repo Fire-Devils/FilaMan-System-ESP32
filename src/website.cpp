@@ -6,6 +6,7 @@
 #include "nfc.h"
 #include "scale.h"
 #include "esp_task_wdt.h"
+#include <esp_system.h>
 #include <Update.h>
 #include "display.h"
 #include "ota.h"
@@ -378,6 +379,10 @@ void setupWebserver(AsyncWebServer &server) {
         JsonDocument doc;
         doc["version"] = VERSION;
         doc["uptime_ms"] = millis();
+        doc["reset_reason"] = (int)esp_reset_reason();  // 1=Power-on 3=SW 4=Panic 5/6/7=Watchdog 9=Brownout
+        doc["spoolman"]["last_rfid_spool"] = spoolmanLastRfidSpool;
+        doc["spoolman"]["last_rfid_uid"] = spoolmanLastRfidUid;
+        doc["spoolman"]["last_rfid_http"] = spoolmanLastRfidHttp;
         doc["weight"]["displayed"] = lastDisplayedWeight;
         doc["weight"]["main_last"] = lastWeight;
         doc["weight"]["stable_counter"] = weightCounterToApi;

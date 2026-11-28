@@ -63,6 +63,10 @@ bool sendRfidResult(String tagUuid, int spoolId, int locationId, bool success, S
 // Spoolman-Proxy fuer die Weboberflaeche (Browser darf Spoolman wegen CORS nicht direkt fragen).
 // what: "spools" | "filaments" | "locations" | "create" (filamentId, location, weight > 0 = Messung).
 // Ergebnis per Polling: spoolmanProxyResult() liefert 0 solange offen, sonst HTTP-Code + JSON in out.
+// Diagnose (/api/debug-state): letzter Tag-Schreib-Bericht an Spoolman. http: 0 = keiner, -10 = verworfen (keine ID/UID), -11 = Schreiben fehlgeschlagen
+extern volatile int spoolmanLastRfidSpool;
+extern volatile int spoolmanLastRfidHttp;
+extern String spoolmanLastRfidUid;
 bool spoolmanProxyStart(const String& what, int filamentId, const String& location, float weight);
 int spoolmanProxyResult(String& out);
 

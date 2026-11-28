@@ -568,7 +568,14 @@ static bool spoolmanLocation(int spoolId, const String& uid, int locationId, con
 }
 
 // Nach erfolgreichem Tag-Schreiben die UID an der Spule hinterlegen
+volatile int spoolmanLastRfidSpool = 0;
+volatile int spoolmanLastRfidHttp = 0;
+String spoolmanLastRfidUid;
 static bool spoolmanRfidResult(const String& uid, int spoolId, bool success) {
+    spoolmanLastRfidSpool = spoolId;
+    spoolmanLastRfidUid = uid;
+    spoolmanLastRfidHttp = success ? -10 : -11;   // -11 = Schreiben fehlgeschlagen
+    Serial.printf("spoolmanRfidResult: success=%d spool=%d uid=%s\n", success, spoolId, uid.c_str());
     if (!success || spoolId <= 0 || uid.isEmpty()) return false;
     spoolmanEnsureNfcField();
     // card_uids im U1-Format ergaenzen (Grossbuchstaben, ohne Trenner), vorhandene UIDs behalten
@@ -588,7 +595,8 @@ static bool spoolmanRfidResult(const String& uid, int spoolId, bool success) {
     body["extra"]["card_uids"] = "\"" + cards + "\"";
     String payload;
     serializeJson(body, payload);
-    return spoolmanHttp("PATCH", "/api/v1/spool/" + String(spoolId), payload) == 200;
+    spoolmanLastRfidHttp = spoolmanHttp("PATCH", "/api/v1/spool/" + String(spoolId), payload);
+    return spoolmanLastRfidHttp == 200;
 }
 
 // ---- Proxy fuer die Weboberflaeche ----
