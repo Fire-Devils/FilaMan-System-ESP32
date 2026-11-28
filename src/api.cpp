@@ -61,6 +61,7 @@ void saveFilamanConfig() {
     preferences.putString(NVS_KEY_FILAMAN_URL, filamanUrl);
     preferences.putString(NVS_KEY_FILAMAN_TOKEN, filamanToken);
     preferences.putBool(NVS_KEY_FILAMAN_REGISTERED, filamanRegistered);
+    preferences.putString(NVS_KEY_SPOOLMAN_URL, spoolmanUrl);
     preferences.end();
 }
 
@@ -70,12 +71,21 @@ void loadFilamanConfig() {
     filamanUrl = preferences.getString(NVS_KEY_FILAMAN_URL, "");
     filamanToken = preferences.getString(NVS_KEY_FILAMAN_TOKEN, "");
     filamanRegistered = preferences.getBool(NVS_KEY_FILAMAN_REGISTERED, false);
+    spoolmanUrl = preferences.getString(NVS_KEY_SPOOLMAN_URL, "");
     preferences.end();
 }
 
 bool checkFilamanRegistration() {
+    if (!spoolmanUrl.isEmpty()) return true;  // Spoolman braucht keine Registrierung
     return filamanRegistered && filamanToken.length() > 0;
 }
+
+// Spoolman-Backend (Implementierung weiter unten)
+static bool spoolmanHeartbeat();
+static bool spoolmanWeight(int spoolId, const String& uid, float weight);
+static bool spoolmanSpoolFull(int spoolId, const String& uid, float weight);
+static bool spoolmanLocation(int spoolId, const String& uid, int locationId, const String& locationName);
+static bool spoolmanRfidResult(const String& uid, int spoolId, bool success);
 
 bool registerDevice(const String& deviceCode) {
     if (filamanUrl.length() == 0) return false;
@@ -102,6 +112,7 @@ bool registerDevice(const String& deviceCode) {
 }
 
 bool sendHeartbeat() {
+    if (!spoolmanUrl.isEmpty()) return spoolmanHeartbeat();
     if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
     HTTPClient http;
     http.setTimeout(10000);  // 10s statt 3s - wichtig für instabile Verbindungen
@@ -148,6 +159,7 @@ bool sendHeartbeatWithRetry(int maxRetries = 2) {
 
 bool sendWeight(int spoolId, String tagUuid, float measuredWeight) {
     Serial.printf("sendWeight: sending to API - spoolId=%d, tagUuid=%s, weight=%.1f\n", spoolId, tagUuid.c_str(), measuredWeight);
+    if (!spoolmanUrl.isEmpty()) return spoolmanWeight(spoolId, tagUuid, measuredWeight);
     if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) {
         Serial.println("ERROR: Not registered or WiFi not connected");
         return false;
@@ -239,6 +251,7 @@ bool sendSpoolFull(int spoolId, String tagUuid, float weight, bool confirmOverwr
         spoolFullShow("No connection", 2500);
         return false;
     }
+    if (!spoolmanUrl.isEmpty()) return spoolmanSpoolFull(spoolId, tagUuid, weight);
     sfSpoolId = spoolId; sfTagUuid = tagUuid; sfWeight = weight;
     spoolFullOverwritePending = false;
     spoolFullRestPending = false;
@@ -312,7 +325,8 @@ bool sendSpoolFull(int spoolId, String tagUuid, float weight, bool confirmOverwr
     return false;
 }
 
-bool sendLocation(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid) {
+bool sendLocation(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid, String locationName) {
+    if (!spoolmanUrl.isEmpty()) return spoolmanLocation(spoolId, spoolTagUuid, locationId, locationName);
     if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
     HTTPClient http;
     http.setTimeout(10000);  // 10s Timeout
@@ -333,6 +347,7 @@ bool sendLocation(int spoolId, String spoolTagUuid, int locationId, String locat
 }
 
 bool sendRfidResult(String tagUuid, int spoolId, int locationId, bool success, String errorMessage, float remainingWeight) {
+    if (!spoolmanUrl.isEmpty()) return spoolmanRfidResult(tagUuid, spoolId, success);
     if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
     HTTPClient http;
     http.setTimeout(10000);  // 10s Timeout
@@ -357,6 +372,7 @@ bool sendRfidResult(String tagUuid, int spoolId, int locationId, bool success, S
 }
 
 bool sendTagData(String tagJson) {
+    if (!spoolmanUrl.isEmpty()) return false;  // nur FilaMan-Scan-Request
     if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
     HTTPClient http;
     http.setTimeout(10000);
@@ -372,6 +388,167 @@ bool sendTagData(String tagJson) {
     http.end();
     Serial.printf("sendTagData: HTTP %d\n", httpCode);
     return (httpCode == 200);
+}
+
+// ===================== Spoolman-Backend =====================
+// Aktiv, sobald spoolmanUrl gesetzt ist. Spiegelt die FilaMan-Device-Calls auf die Spoolman-REST-API.
+// Spulen werden ueber spool_id/sm_id vom Tag gefunden, sonst ueber das Extra-Feld "nfc_id" (Tag-UID).
+
+static int spoolmanHttp(const char* method, const String& path, const String& body, JsonDocument* out = nullptr) {
+    if (WiFi.status() != WL_CONNECTED) return -1;
+    HTTPClient http;
+    http.setTimeout(10000);
+    http.setReuse(false);
+    http.begin(spoolmanUrl + path);
+    if (body.length() > 0) http.addHeader("Content-Type", "application/json");
+    int code = http.sendRequest(method, body);
+    if (out && code >= 200 && code < 300) {
+        String resp = http.getString();
+        if (deserializeJson(*out, resp)) code = -2;
+    }
+    http.end();
+    Serial.printf("Spoolman %s %s -> %d\n", method, path.c_str(), code);
+    return code;
+}
+
+// Extra-Feld fuer die Tag-UID einmalig anlegen (wie FilaMan v2). Werte von Extra-Feldern sind JSON-kodiert.
+static bool spoolmanNfcFieldReady = false;
+static void spoolmanEnsureNfcField() {
+    if (spoolmanNfcFieldReady) return;
+    JsonDocument fields;
+    if (spoolmanHttp("GET", "/api/v1/field/spool", "", &fields) != 200) return;
+    for (JsonObject f : fields.as<JsonArray>()) {
+        if (f["key"] == "nfc_id") { spoolmanNfcFieldReady = true; return; }
+    }
+    int code = spoolmanHttp("POST", "/api/v1/field/spool/nfc_id", "{\"name\":\"NFC ID\",\"field_type\":\"text\"}");
+    spoolmanNfcFieldReady = (code == 200);
+}
+
+// Spule ueber extra.nfc_id suchen. 0 = nicht gefunden.
+// ponytail: laedt alle Spulen (gefiltert auf id+nfc_id) - reicht fuer einige hundert Spulen, sonst serverseitig filtern.
+static int spoolmanFindSpoolByUid(const String& uid) {
+    if (uid.isEmpty()) return 0;
+    HTTPClient http;
+    http.setTimeout(15000);
+    http.setReuse(false);
+    http.begin(spoolmanUrl + "/api/v1/spool");
+    int code = http.GET();
+    int found = 0;
+    if (code == 200) {
+        JsonDocument filter;
+        filter[0]["id"] = true;
+        filter[0]["extra"]["nfc_id"] = true;
+        JsonDocument doc;
+        if (!deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter))) {
+            String want = "\"" + uid + "\"";
+            for (JsonObject sp : doc.as<JsonArray>()) {
+                const char* v = sp["extra"]["nfc_id"] | "";
+                if (want.equalsIgnoreCase(v)) { found = sp["id"] | 0; break; }
+            }
+        }
+    }
+    http.end();
+    Serial.printf("Spoolman lookup uid=%s -> spool %d\n", uid.c_str(), found);
+    return found;
+}
+
+static int spoolmanResolve(int spoolId, const String& uid) {
+    return spoolId > 0 ? spoolId : spoolmanFindSpoolByUid(uid);
+}
+
+static bool spoolmanHeartbeat() {
+    JsonDocument doc;
+    filamanConnected = (spoolmanHttp("GET", "/api/v1/health", "", &doc) == 200);
+    if (filamanConnected) {
+        serverOtaConfirm();       // neue Firmware hat Kontakt -> kein Rollback
+        spoolmanEnsureNfcField();
+    }
+    return filamanConnected;
+}
+
+static void showApiError() {
+    oledShowProgressBar(1, 1, tr(STR_FAILURE), tr(STR_API_ERROR));
+    oledSetPriority(DISPLAY_PRIORITY_WARNING, 2000);
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    oledClearPriority();
+}
+
+static bool spoolmanWeight(int spoolId, const String& uid, float weight) {
+    int id = spoolmanResolve(spoolId, uid);
+    if (id <= 0) { showApiError(); return false; }
+    // /measure: Bruttogewicht, Spoolman zieht das Leergewicht der Spule selbst ab
+    JsonDocument resp;
+    int code = spoolmanHttp("PUT", "/api/v1/spool/" + String(id) + "/measure", "{\"weight\":" + String(weight, 1) + "}", &resp);
+    if (code != 200) { showApiError(); return false; }
+    if (resp["remaining_weight"].is<float>()) {
+        int remaining = (int)resp["remaining_weight"].as<float>();
+        lastRemainingShown = (uint16_t)max(remaining, 0);
+        oledShowRemainingWeight(remaining);
+        oledSetPriority(DISPLAY_PRIORITY_ACTION, 3000);
+        vTaskDelay(pdMS_TO_TICKS(3000));
+        oledClearPriority();
+    }
+    return true;
+}
+
+// Spule voll: Leergewicht = aktuelles Gewicht - Filament-Startgewicht, verbrauchtes Gewicht = 0.
+// Die Tipp-Bestaetigung an der Waage reicht als Bestaetigung, daher kein 409-Dialog wie bei FilaMan.
+static bool spoolmanSpoolFull(int spoolId, const String& uid, float weight) {
+    int id = spoolmanResolve(spoolId, uid);
+    spoolFullLastOldTara = -1;
+    spoolFullLastNewTara = -1;
+    spoolFullLastAt = millis();
+    if (id <= 0) { spoolFullLastHttpCode = 404; spoolFullShow("Spool/server\nnot found", 3500); return false; }
+    JsonDocument sp;
+    int code = spoolmanHttp("GET", "/api/v1/spool/" + String(id), "", &sp);
+    float initial = sp["initial_weight"].is<float>() ? sp["initial_weight"].as<float>() : (sp["filament"]["weight"] | 0.0f);
+    if (code != 200 || initial <= 0) {
+        spoolFullLastHttpCode = code;
+        spoolFullShow(code == 200 ? "No initial\nweight set" : "API error " + String(code), 3500);
+        return false;
+    }
+    int newT = (int)lroundf(weight - initial);
+    if (!sp["spool_weight"].isNull()) spoolFullLastOldTara = (int)lroundf(sp["spool_weight"].as<float>());
+    spoolFullLastNewTara = newT;
+    if (newT < 0 || newT > 2000) {
+        spoolFullLastHttpCode = 422;
+        spoolFullShow("Tara " + String(newT) + " g\nout of range", 3500);
+        return false;
+    }
+    code = spoolmanHttp("PATCH", "/api/v1/spool/" + String(id), "{\"spool_weight\":" + String(newT) + ",\"used_weight\":0}");
+    spoolFullLastHttpCode = code;
+    if (code != 200) { spoolFullShow("API error " + String(code), 3000); return false; }
+    String msg = "Tara new: " + String(newT) + " g";
+    if (spoolFullLastOldTara >= 0) msg += "\nold: " + String(spoolFullLastOldTara) + " g";
+    spoolFullShow(msg, 4000);
+    spoolFullRestWeight = (uint16_t)lroundf(initial);
+    lastRemainingShown = spoolFullRestWeight;
+    spoolFullRestAt = millis() + 4000;
+    spoolFullRestPending = true;
+    return true;
+}
+
+// Spoolman kennt Orte nur als Text: Name vom Tag, sonst die FilaMan-location_id als Text
+static bool spoolmanLocation(int spoolId, const String& uid, int locationId, const String& locationName) {
+    int id = spoolmanResolve(spoolId, uid);
+    String name = locationName.length() > 0 ? locationName : (locationId > 0 ? String(locationId) : String());
+    if (id <= 0 || name.isEmpty()) return false;
+    JsonDocument body;
+    body["location"] = name;
+    String payload;
+    serializeJson(body, payload);
+    return spoolmanHttp("PATCH", "/api/v1/spool/" + String(id), payload) == 200;
+}
+
+// Nach erfolgreichem Tag-Schreiben die UID an der Spule hinterlegen
+static bool spoolmanRfidResult(const String& uid, int spoolId, bool success) {
+    if (!success || spoolId <= 0 || uid.isEmpty()) return false;
+    spoolmanEnsureNfcField();
+    JsonDocument body;
+    body["extra"]["nfc_id"] = "\"" + uid + "\"";
+    String payload;
+    serializeJson(body, payload);
+    return spoolmanHttp("PATCH", "/api/v1/spool/" + String(spoolId), payload) == 200;
 }
 
 void filamanApiTask(void* pvParameters) {
@@ -424,7 +601,7 @@ void filamanApiTask(void* pvParameters) {
                 case API_REQUEST_HEARTBEAT: sendHeartbeatWithRetry(2); break;
                 case API_REQUEST_WEIGHT: sendWeight(req.id1, req.str1, req.val); break;
                 case API_REQUEST_SPOOL_FULL: sendSpoolFull(req.id1, req.str1, req.val, req.bool1); break;
-                case API_REQUEST_LOCATE: sendLocation(req.id1, req.str1, req.id2, req.str2); break;
+                case API_REQUEST_LOCATE: sendLocation(req.id1, req.str1, req.id2, req.str2, req.str3); break;
                 case API_REQUEST_RFID_RESULT: sendRfidResult(req.str1, req.id1, req.id2, req.bool1, req.str3, req.remainingWeight); break;
                 case API_REQUEST_TAG_DATA: sendTagData(req.str1); break;
                 default: break;
@@ -505,13 +682,14 @@ bool spoolFullConfirmOverwriteAsync() {
     return true;
 }
 
-void sendLocationAsync(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid) {
+void sendLocationAsync(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid, String locationName) {
     if (!checkFilamanRegistration()) return;
     ApiRequest r = makeRequest(API_REQUEST_LOCATE);
     r.id1 = spoolId;
     r.id2 = locationId;
     r.str1 = spoolTagUuid;
     r.str2 = locationTagUuid;
+    r.str3 = locationName;
     enqueueRequest(r);
 }
 

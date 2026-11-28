@@ -40,6 +40,7 @@ nfcReaderStateType lastnfcReaderState = NFC_IDLE;
 String templateProcessor(const String& var) {
     if (var == "registered") return filamanRegistered ? "Registered" : "Not Registered";
     if (var == "filamanUrl") return filamanUrl;
+    if (var == "spoolmanUrl") return spoolmanUrl;
     if (var == "autoTare") return autoTare ? "checked" : "";
     return String();  // Unbekannte Variable - leer zurückgeben
 }
@@ -178,6 +179,9 @@ void setupWebserver(AsyncWebServer &server) {
     server.on("/setup", HTTP_GET, [](AsyncWebServerRequest *request){
         sendWebAsset(request, "/setup.html", NO_CACHE);
     });
+    server.on("/spoolman", HTTP_GET, [](AsyncWebServerRequest *request){
+        sendWebAsset(request, "/spoolman.html", NO_CACHE);
+    });
     server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *request){
         sendWebAsset(request, "/style.css", CACHE_ASSETS);
     });
@@ -196,6 +200,7 @@ void setupWebserver(AsyncWebServer &server) {
         JsonDocument doc;
         doc["url"] = filamanUrl;
         doc["registered"] = filamanRegistered;
+        doc["spoolmanUrl"] = spoolmanUrl;
         String response;
         serializeJson(doc, response);
         request->send(200, "application/json", response);
@@ -219,6 +224,23 @@ void setupWebserver(AsyncWebServer &server) {
         } else {
             request->send(503, "application/json", "{\"success\": false, \"error\": \"API queue full\"}");
         }
+    });
+
+    // Spoolman-Modus: URL setzen (leer = zurueck zu FilaMan). Verbindung prueft der API-Task per Heartbeat.
+    server.on("/api/spoolman", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+        JsonDocument doc;
+        if (deserializeJson(doc, (const uint8_t*)data, len)) {
+            request->send(400, "application/json", "{\"success\": false, \"error\": \"Invalid JSON\"}");
+            return;
+        }
+        String u = doc["url"] | "";
+        u.trim();
+        while (u.endsWith("/")) u.remove(u.length() - 1);
+        spoolmanUrl = u;
+        filamanConnected = false;
+        saveFilamanConfig();
+        sendHeartbeatAsync();
+        request->send(200, "application/json", "{\"success\": true}");
     });
 
     server.on("/api/v1/rfid/write", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){

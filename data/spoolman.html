@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FilaMan - Spoolman Tags</title>
+    <link rel="icon" type="image/png" href="/favicon.ico">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="fm-page">
+        <aside class="fm-sidebar">
+            <div class="sidebar-brand">
+                <img src="/logo.png" alt="Logo" class="sidebar-logo">
+                <div class="brand-text">
+                    <h1>FilaMan <span class="version"></span></h1>
+                </div>
+            </div>
+            <nav class="fm-nav">
+                <a href="/">Start</a>
+                <a href="/waage">Scale</a>
+                <a href="/setup">Setup</a>
+                <a href="/spoolman" class="active">Spoolman</a>
+                <a href="/upgrade">Upgrade</a>
+            </nav>
+            <div class="sidebar-status">
+                <div class="status-item">
+                    <span class="status-dot" id="filamanDot"></span>
+                    <span>System Sync</span>
+                </div>
+                <div class="status-item">
+                    <span id="ramStatus"></span>
+                </div>
+            </div>
+        </aside>
+
+        <main class="fm-main">
+            <header>
+                <h1>Spoolman Tags</h1>
+                <p>Write NFC tags for spools and locations from your Spoolman inventory.</p>
+            </header>
+
+            <div class="fm-card" id="noSpoolman" hidden>
+                <p>No Spoolman URL set. Configure it under <a href="/setup">Setup</a>.</p>
+            </div>
+
+            <div class="fm-card">
+                <h2>Spool Tag</h2>
+                <div class="fm-form-group" style="margin-top: 1rem;">
+                    <label class="fm-label" for="spoolSelect">Spool</label>
+                    <select id="spoolSelect" class="fm-input"><option value="">Loading...</option></select>
+                </div>
+                <button id="writeSpoolBtn" class="fm-btn fm-btn-primary">Write Spool Tag</button>
+            </div>
+
+            <div class="fm-card">
+                <h2>Location Tag</h2>
+                <div class="fm-form-group" style="margin-top: 1rem;">
+                    <label class="fm-label" for="locationInput">Location</label>
+                    <input type="text" id="locationInput" class="fm-input" list="locationList" placeholder="e.g. Shelf A">
+                    <datalist id="locationList"></datalist>
+                    <p style="font-size: 0.8rem; margin-top: 0.5rem;">Scan a spool tag first, then the location tag, to move the spool.</p>
+                </div>
+                <button id="writeLocationBtn" class="fm-btn fm-btn-primary">Write Location Tag</button>
+            </div>
+
+            <div id="statusMessage" style="margin-top: 1rem;"></div>
+        </main>
+    </div>
+
+    <script>
+        const status = (text, ok) => {
+            const el = document.getElementById('statusMessage');
+            el.textContent = text;
+            el.style.color = ok === undefined ? 'var(--text-muted)' : (ok ? 'var(--success-text)' : 'var(--error-text)');
+        };
+
+        fetch('/api/version').then(r => r.json()).then(d => {
+            document.querySelector('.version').textContent = 'v' + d.version;
+        }).catch(() => {});
+
+        // Spoolman wird direkt vom Browser abgefragt (Spoolman erlaubt CORS), die Waage schreibt nur den Tag.
+        fetch('/api/config').then(r => r.json()).then(async cfg => {
+            const url = cfg.spoolmanUrl;
+            if (!url) { document.getElementById('noSpoolman').hidden = false; return; }
+            try {
+                const spools = await (await fetch(url + '/api/v1/spool')).json();
+                const sel = document.getElementById('spoolSelect');
+                sel.innerHTML = '';
+                spools.sort((a, b) => a.id - b.id).forEach(s => {
+                    const f = s.filament || {};
+                    const opt = document.createElement('option');
+                    opt.value = s.id;
+                    opt.textContent = `#${s.id} ${f.vendor ? f.vendor.name + ' ' : ''}${f.name || ''} ${f.material || ''}` +
+                        (s.remaining_weight != null ? ` (${Math.round(s.remaining_weight)} g)` : '');
+                    sel.appendChild(opt);
+                });
+                const locations = await (await fetch(url + '/api/v1/location')).json();
+                const list = document.getElementById('locationList');
+                locations.forEach(l => { const o = document.createElement('option'); o.value = l; list.appendChild(o); });
+            } catch (e) {
+                status('Could not load data from Spoolman (' + url + '). Spoolman blocks browser requests by default: ' +
+                    'set SPOOLMAN_CORS_ORIGIN=' + location.origin + ' in Spoolman and restart it. (' + e + ')', false);
+            }
+        });
+
+        function writeTag(payload) {
+            status('Place the tag on the scale...');
+            fetch('/api/v1/rfid/write', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json().then(d => ({ ok: r.ok, d })))
+            .then(({ ok, d }) => status(ok ? 'Writing started. Hold the tag on the reader, the display shows the result.' : (d.error || 'Error'), ok))
+            .catch(() => status('Network error.', false));
+        }
+
+        document.getElementById('writeSpoolBtn').addEventListener('click', () => {
+            const id = document.getElementById('spoolSelect').value;
+            if (!id) return status('Please select a spool.', false);
+            writeTag({ sm_id: String(id) });
+        });
+
+        document.getElementById('writeLocationBtn').addEventListener('click', () => {
+            const name = document.getElementById('locationInput').value.trim();
+            if (!name) return status('Please enter a location.', false);
+            writeTag({ location: name });
+        });
+
+        let ws = null;
+        function connectWebSocket() {
+            ws = new WebSocket(`ws://${window.location.hostname}/ws`);
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'heartbeat') {
+                    document.getElementById('filamanDot').className = data.filaman_connected ? 'status-dot online' : 'status-dot offline';
+                    document.getElementById('ramStatus').textContent = data.freeHeap + ' KB free';
+                }
+            };
+            ws.onclose = () => setTimeout(connectWebSocket, 2000);
+        }
+        connectWebSocket();
+        setInterval(() => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'heartbeat' })); }, 5000);
+    </script>
+</body>
+</html>

@@ -146,7 +146,7 @@ void loop() {
 
   // Handle connection errors (not registered or not connected)
   if (intervalElapsed(currentMillis, lastConnErrorShowTime, connErrorShowInterval)) {
-      if (!filamanRegistered && oledCanUpdate(DISPLAY_PRIORITY_WARNING)) {
+      if (!checkFilamanRegistration() && oledCanUpdate(DISPLAY_PRIORITY_WARNING)) {
           oledShowConnectionError(tr(STR_NOT_REGISTERED), WiFi.localIP().toString());
           oledSetPriority(DISPLAY_PRIORITY_WARNING, 3000);
           mainTaskWasPaused = true;

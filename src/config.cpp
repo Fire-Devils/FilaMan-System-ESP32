@@ -57,6 +57,7 @@ const uint8_t webserverPort = 80;
 String filamanUrl = "";
 String filamanToken = "";
 bool filamanRegistered = false;
+String spoolmanUrl = "";
 // ***** API
 
 // ***** Display Sleep

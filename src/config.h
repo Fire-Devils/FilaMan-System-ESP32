@@ -7,6 +7,7 @@
 #define NVS_KEY_FILAMAN_URL                "filamanUrl"
 #define NVS_KEY_FILAMAN_TOKEN              "filamanToken"
 #define NVS_KEY_FILAMAN_REGISTERED         "registered"
+#define NVS_KEY_SPOOLMAN_URL               "spoolmanUrl"
 
 #define NVS_NAMESPACE_SCALE                 "scale"
 #define NVS_KEY_CALIBRATION                 "cal_value"
@@ -52,6 +53,7 @@ extern const uint8_t OLED_DATA_END;
 extern String filamanUrl;
 extern String filamanToken;
 extern bool filamanRegistered;
+extern String spoolmanUrl;   // nicht leer = Spoolman-Modus statt FilaMan-Server
 
 extern const uint8_t webserverPort;
 

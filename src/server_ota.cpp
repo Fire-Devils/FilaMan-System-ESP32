@@ -150,7 +150,7 @@ static void prepareHttp(HTTPClient& http, const String& url, uint16_t timeoutMs)
 
 // result: started|ok|failed|rolled_back. Liefert true bei 2xx (bestaetigt dann auch eine neue Firmware).
 static bool sendOtaReport(const String& from, const String& to, const char* result, const String& error) {
-    if (!checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
+    if (!spoolmanUrl.isEmpty() || !checkFilamanRegistration() || WiFi.status() != WL_CONNECTED) return false;
     HTTPClient http;
     prepareHttp(http, filamanUrl + "/api/v1/devices/ota-report", 10000);
     http.addHeader("Content-Type", "application/json");
@@ -503,10 +503,10 @@ static void serverOtaTask(void*) {
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(1000));
         uint32_t now = millis();
-        bool online = checkFilamanRegistration() && WiFi.status() == WL_CONNECTED;
+        bool online = spoolmanUrl.isEmpty() && checkFilamanRegistration() && WiFi.status() == WL_CONNECTED;
 
         if (otaPending) {
-            if (!checkFilamanRegistration()) {
+            if (!checkFilamanRegistration() || !spoolmanUrl.isEmpty()) {
                 serverOtaConfirm();  // Einrichtungsmodus: es gibt keinen Server zu fragen
             } else if (WiFi.status() == WL_CONNECTED) {
                 pendingOnlineMs += 1000;

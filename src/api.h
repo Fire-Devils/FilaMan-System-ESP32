@@ -31,7 +31,7 @@ bool registerDevice(const String& deviceCode);
 bool registerDeviceAsync(const String& url, const String& deviceCode);
 void sendHeartbeatAsync();
 void sendWeightAsync(int spoolId, String tagUuid, float weight);
-void sendLocationAsync(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid);
+void sendLocationAsync(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid, String locationName = "");
 void sendRfidResultAsync(String tagUuid, int spoolId, int locationId, bool success, String errorMessage, float remainingWeight = 0);
 void sendTagDataAsync(String tagJson);
 
@@ -56,7 +56,7 @@ bool spoolFullConfirmOverwriteAsync();               // wiederholt den letzten A
 bool sendHeartbeat();
 bool sendWeight(int spoolId, String tagUuid, float weight);
 bool sendSpoolFull(int spoolId, String tagUuid, float weight, bool confirmOverwrite);
-bool sendLocation(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid);
+bool sendLocation(int spoolId, String spoolTagUuid, int locationId, String locationTagUuid, String locationName = "");
 bool sendRfidResult(String tagUuid, int spoolId, int locationId, bool success, String errorMessage, float remainingWeight = 0);
 
 // Helper functions

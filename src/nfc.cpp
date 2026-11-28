@@ -1147,10 +1147,11 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, size_t bufferSize, Stri
         }
       }
 
-      else if(doc["location_id"].is<int>())
+      else if(doc["location_id"].is<int>() || doc["location"].is<String>())
       {
         Serial.println("Location Tag found!");
-        int locId = doc["location_id"].as<int>();
+        int locId = doc["location_id"] | 0;
+        String locName = doc["location"] | "";  // Spoolman-Ortsname (Tags aus FilaMan v2 / Spoolman-Seite)
 
         // Check if a spool was scanned before
         if ((lastSpoolId.length() == 0 || lastSpoolId == "0") && lastSpoolTagUuid.length() == 0) {
@@ -1159,7 +1160,7 @@ bool decodeNdefAndReturnJson(const byte* encodedMessage, size_t bufferSize, Stri
           oledSetPriority(DISPLAY_PRIORITY_WARNING, 3000);
         } else {
           int sId = lastSpoolId.toInt();
-          sendLocationAsync(sId, lastSpoolTagUuid, locId, "");
+          sendLocationAsync(sId, lastSpoolTagUuid, locId, "", locName);
 
           // Display feedback - location was set
           oledShowProgressBar(1, 1, tr(STR_LOCATION), tr(STR_LOCATION_SET));
